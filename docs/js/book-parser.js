@@ -124,23 +124,28 @@ export const parseFilename = (filename) => {
 
 /**
  * Extract a numeric sort key from a filename.
- * Looks for chapter numbers, leading numbers, or any number in the name.
- * Returns a number (for sorting) or Infinity if no number found.
+ * Uses simple, direct number extraction — does NOT rely on parseFilename
+ * regexes (which can fail on complex multi-dash filenames).
+ *
+ * Strategy: strip the .mp3 extension, then find the LAST number in the
+ * filename. For audiobooks this is almost always the chapter/part number.
+ *   "David Wong - John Dies at the End - 10.mp3" → 10
+ *   "Chapter 03 - The Journey.mp3"                → 3
+ *   "01.mp3"                                      → 1
+ *
+ * Returns a number for sorting, or Infinity if no number found.
  */
 export const extractSortKey = (filename) => {
   const basename = filename.replace(/^.*[\\/]/, "");
-  const parsed = parseFilename(basename);
-  if (parsed.chapterNum != null) return parsed.chapterNum;
+  const stem = basename.replace(/\.mp3$/i, "");
 
-  // Try to find a leading number
-  const leadingMatch = basename.match(/^(\d+)/);
-  if (leadingMatch) return parseInt(leadingMatch[1], 10);
+  // Find all numbers in the stem
+  const nums = stem.match(/\d+/g);
+  if (!nums || !nums.length) return Infinity;
 
-  // Try any number in the filename (prefer the last one, often the part number)
-  const allNums = basename.match(/\d+/g);
-  if (allNums?.length) return parseInt(allNums[allNums.length - 1], 10);
-
-  return Infinity;
+  // Use the LAST number — in most audiobook naming conventions the
+  // chapter/part number comes at the end of the filename
+  return parseInt(nums[nums.length - 1], 10);
 };
 
 /**
@@ -199,6 +204,7 @@ const CHAPTER_NOISE = [
 
 /**
  * Clean a raw chapter string into a presentable name.
+ * Returns null if the result is just a bare number (not a real name).
  */
 const cleanChapterName = (raw) => {
   if (!raw) return null;
@@ -211,6 +217,8 @@ const cleanChapterName = (raw) => {
   cleaned = cleaned.replace(/\s*[(\[]\d+[)\]]\s*$/, "");
   // Collapse underscores / hyphens used as separators
   cleaned = cleaned.replace(/[_]+/g, " ").trim();
+  // If the result is just a bare number, it's not a useful name
+  if (/^\d+$/.test(cleaned)) return null;
   // Title-case if all lowercase
   if (cleaned === cleaned.toLowerCase() && cleaned.length > 0) {
     cleaned = cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -226,10 +234,17 @@ const cleanChapterName = (raw) => {
  * @param {Array} metadataList  - from extractMetadata() per track
  * @returns {Array<string>} chapter names in order
  */
-export const buildChapterNames = (filenameParsed, metadataList) => {
+/**
+ * @param {Array} filenameParsed - from parseFilenames().chapters
+ * @param {Array} metadataList  - from extractMetadata() per track
+ * @param {Array<string>} filenames - original filenames (for extractSortKey)
+ */
+export const buildChapterNames = (filenameParsed, metadataList, filenames = []) => {
   return filenameParsed.map((fp, i) => {
     const meta = metadataList[i];
-    const num = fp.chapterNum ?? i + 1;
+    // Get chapter number from sort key (most reliable) or fallback
+    const sortNum = filenames[i] ? extractSortKey(filenames[i]) : Infinity;
+    const num = Number.isFinite(sortNum) ? sortNum : (fp.chapterNum ?? i + 1);
 
     // Priority: ID3 title > filename chapter name > generic
     const rawName =
@@ -263,7 +278,7 @@ export const inferBook = (files, metadataList) => {
   const filenames = files.map((f) => f.name || f.file?.name || "");
   const fnResult = parseFilenames(filenames);
   const id3Result = id3Consensus(metadataList);
-  const chapters = buildChapterNames(fnResult.chapters, metadataList);
+  const chapters = buildChapterNames(fnResult.chapters, metadataList, filenames);
 
   // Title priority: ID3 album > filename title > first ID3 track title
   const title =

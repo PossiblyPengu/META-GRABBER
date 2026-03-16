@@ -49,8 +49,15 @@ const searchGoogleBooks = async (query, maxResults = 5) => {
           coverUrl = coverUrl.replace(/zoom=\d/, "zoom=1");
         }
       }
+      // Extract chapter names from table of contents if available
+      let chapters = null;
+      if (v.tableOfContents?.length) {
+        chapters = v.tableOfContents.map((ch) => ch.title || ch);
+      }
+
       return {
         title: v.title || "Unknown",
+        subtitle: v.subtitle || null,
         author: v.authors?.join(", ") || null,
         year: v.publishedDate?.slice(0, 4) || null,
         genre: v.categories?.join(", ") || null,
@@ -58,6 +65,8 @@ const searchGoogleBooks = async (query, maxResults = 5) => {
         coverUrl,
         isbn: isbn?.identifier || null,
         publisher: v.publisher || null,
+        chapters,
+        volumeId: item.id,
         source: "google",
       };
     });
@@ -86,13 +95,16 @@ const searchOpenLibrary = async (query, maxResults = 5) => {
         : null;
       return {
         title: doc.title || "Unknown",
+        subtitle: null,
         author: doc.author_name?.join(", ") || null,
         year: doc.first_publish_year ? String(doc.first_publish_year) : null,
         genre: doc.subject?.slice(0, 3).join(", ") || null,
-        description: null, // Open Library search doesn't return descriptions inline
+        description: null,
         coverUrl,
         isbn: doc.isbn?.[0] || null,
         publisher: doc.publisher?.[0] || null,
+        chapters: null,
+        workKey: doc.key || null,
         source: "openlibrary",
       };
     });
@@ -134,6 +146,50 @@ export const searchBooks = async (query, maxResults = 5) => {
   });
 
   return [...googleResults, ...uniqueOL];
+};
+
+/**
+ * Fetch chapter names for a specific book result.
+ * For Google Books, uses the volumeId to get full details.
+ * For Open Library, uses the work key to get the TOC.
+ *
+ * @param {BookResult} result
+ * @returns {Promise<string[]|null>}
+ */
+export const fetchChapters = async (result) => {
+  // If chapters were already included in search results
+  if (result.chapters?.length) return result.chapters;
+
+  if (result.source === "google" && result.volumeId) {
+    try {
+      const resp = await fetch(
+        `https://www.googleapis.com/books/v1/volumes/${result.volumeId}`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        const toc = data.volumeInfo?.tableOfContents;
+        if (toc?.length) return toc.map((ch) => ch.title || ch);
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (result.source === "openlibrary" && result.workKey) {
+    try {
+      const resp = await fetch(
+        `https://openlibrary.org${result.workKey}.json`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.table_of_contents?.length) {
+          return data.table_of_contents.map(
+            (ch) => ch.title || ch.label || String(ch)
+          );
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return null;
 };
 
 /**

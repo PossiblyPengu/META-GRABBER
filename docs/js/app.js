@@ -1,7 +1,7 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, buildChapterNames, extractSortKey } from "./book-parser.js";
-import { searchBooks, fetchCoverBlob } from "./book-lookup.js";
+import { searchBooks, fetchCoverBlob, fetchChapters } from "./book-lookup.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -306,16 +306,26 @@ const addFiles = async (fileList) => {
   });
   await Promise.all(metaPromises);
 
-  // Re-sort using ID3 track numbers if available (more authoritative)
-  const hasID3TrackNums = tracks.some((t) => t.meta?.track);
-  if (hasID3TrackNums) {
-    tracks.sort((a, b) => {
-      const numA = parseInt(a.meta?.track, 10) || Infinity;
-      const numB = parseInt(b.meta?.track, 10) || Infinity;
-      if (numA !== numB) return numA - numB;
-      return extractSortKey(a.file.name) - extractSortKey(b.file.name);
-    });
-  }
+  // Re-sort: prefer ID3 track numbers, fall back to filename sort key
+  const parseTrackNum = (track) => {
+    if (track == null) return null;
+    const n = parseInt(String(track), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const hasID3TrackNums = tracks.some((t) => parseTrackNum(t.meta?.track) != null);
+  tracks.sort((a, b) => {
+    if (hasID3TrackNums) {
+      const numA = parseTrackNum(a.meta?.track);
+      const numB = parseTrackNum(b.meta?.track);
+      if (numA != null && numB != null && numA !== numB) return numA - numB;
+      if (numA != null && numB == null) return -1;
+      if (numA == null && numB != null) return 1;
+    }
+    const keyA = extractSortKey(a.file.name);
+    const keyB = extractSortKey(b.file.name);
+    if (keyA !== keyB) return keyA - keyB;
+    return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
+  });
 
   // Run book inference across ALL tracks (filenames + ID3 consensus)
   const allMeta = tracks.map((t) => t.meta);
@@ -603,9 +613,26 @@ const applyLookupResult = async (result) => {
     if (blob && blob.size > 0) {
       setCover(blob);
     }
-    updateStatus("Idle");
   }
 
+  // Fetch and apply chapter names from the API
+  if (tracks.length) {
+    updateStatus("Fetching chapters…");
+    const apiChapters = await fetchChapters(result);
+    if (apiChapters?.length) {
+      const count = Math.min(apiChapters.length, tracks.length);
+      for (let i = 0; i < count; i++) {
+        tracks[i].chapterName = apiChapters[i];
+      }
+      // If more tracks than API chapters, label the rest generically
+      for (let i = count; i < tracks.length; i++) {
+        tracks[i].chapterName = `Chapter ${i + 1}`;
+      }
+      refreshTrackList();
+    }
+  }
+
+  updateStatus("Idle");
   lookupResults.hidden = true;
 };
 
