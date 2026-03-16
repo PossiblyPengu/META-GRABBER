@@ -16,6 +16,14 @@ const progressBar = document.getElementById("progress-bar");
 const progressFill = document.getElementById("progress-fill");
 const titleInput = form.elements.namedItem("title");
 const authorInput = form.elements.namedItem("author");
+const yearInput = form.elements.namedItem("year");
+const genreInput = form.elements.namedItem("genre");
+const descriptionInput = form.elements.namedItem("description");
+const coverPreview = document.getElementById("cover-preview");
+const coverInput = document.getElementById("cover-input");
+const coverPlaceholder = document.getElementById("cover-placeholder");
+const coverUploadBtn = document.getElementById("cover-upload-btn");
+const coverRemoveBtn = document.getElementById("cover-remove-btn");
 
 // ---------------------------------------------------------------------------
 // State
@@ -24,6 +32,8 @@ let tracks = []; // { file: File, meta: null | { duration, bitrate, title, artis
 let ffmpeg = null;
 let ffmpegReady = false;
 let inferredBook = null; // result from inferBook()
+let coverFile = null; // File or Blob for cover art
+let coverObjectURL = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,6 +63,36 @@ const formatDuration = (seconds) => {
 };
 
 // ---------------------------------------------------------------------------
+// Cover art management
+// ---------------------------------------------------------------------------
+const setCover = (blob) => {
+  if (coverObjectURL) URL.revokeObjectURL(coverObjectURL);
+  coverFile = blob;
+  coverObjectURL = URL.createObjectURL(blob);
+  coverPlaceholder.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = coverObjectURL;
+  img.alt = "Cover art";
+  coverPlaceholder.replaceWith(img);
+  coverRemoveBtn.hidden = false;
+};
+
+const removeCover = () => {
+  if (coverObjectURL) URL.revokeObjectURL(coverObjectURL);
+  coverFile = null;
+  coverObjectURL = null;
+  const existing = coverPreview.querySelector("img");
+  if (existing) {
+    const ph = document.createElement("div");
+    ph.className = "placeholder";
+    ph.id = "cover-placeholder";
+    ph.innerHTML = "Click to add<br />cover art";
+    existing.replaceWith(ph);
+  }
+  coverRemoveBtn.hidden = true;
+};
+
+// ---------------------------------------------------------------------------
 // Client-side ID3 metadata extraction via jsmediatags
 // ---------------------------------------------------------------------------
 const readID3 = (file) =>
@@ -74,12 +114,20 @@ const parseTag = (file, resolve) => {
   window.jsmediatags.read(file, {
     onSuccess: (tag) => {
       const t = tag.tags || {};
+      let picture = null;
+      if (t.picture) {
+        const { data, format } = t.picture;
+        const bytes = new Uint8Array(data);
+        picture = new Blob([bytes], { type: format });
+      }
       resolve({
         title: t.title || null,
         artist: t.artist || null,
         album: t.album || null,
         year: t.year || null,
         track: t.track ? String(t.track) : null,
+        genre: t.genre || null,
+        picture,
       });
     },
     onError: () => resolve(null),
@@ -120,6 +168,8 @@ const extractMetadata = async (file) => {
     album: id3?.album || null,
     year: id3?.year || null,
     track: id3?.track || null,
+    genre: id3?.genre || null,
+    picture: id3?.picture || null,
     duration: audioInfo.duration,
     bitrate: audioInfo.bitrate,
   };
@@ -260,6 +310,28 @@ const addFiles = async (fileList) => {
     authorInput.value = inferredBook.author;
   }
 
+  // Auto-populate year/genre from first track with data
+  for (const t of tracks) {
+    if (!t.meta) continue;
+    if (t.meta.year && !yearInput.value) {
+      yearInput.value = t.meta.year;
+    }
+    if (t.meta.genre && genreInput.value === "Audiobook") {
+      genreInput.value = t.meta.genre;
+    }
+    break;
+  }
+
+  // Extract cover art from first track that has one (if no cover set yet)
+  if (!coverFile) {
+    for (const t of tracks) {
+      if (t.meta?.picture) {
+        setCover(t.meta.picture);
+        break;
+      }
+    }
+  }
+
   refreshTrackList();
 };
 
@@ -285,6 +357,9 @@ const compileM4B = async () => {
 
   const titleVal = titleInput.value.trim() || "Untitled Audiobook";
   const authorVal = authorInput.value.trim() || "Unknown";
+  const yearVal = yearInput.value.trim();
+  const genreVal = genreInput.value.trim();
+  const descVal = descriptionInput.value.trim();
 
   updateStatus("Reading files…");
   showProgress(5);
@@ -305,10 +380,20 @@ const compileM4B = async () => {
     new TextEncoder().encode(listContent)
   );
 
+  // Write cover art to virtual FS if present
+  let hasCover = false;
+  if (coverFile) {
+    await ffmpeg.writeFile("cover.jpg", await fetchFile(coverFile));
+    hasCover = true;
+  }
+
   // Build chapter metadata file using inferred chapter names
   let chapterMeta = ";FFMETADATA1\n";
   chapterMeta += `title=${titleVal}\n`;
   chapterMeta += `artist=${authorVal}\n`;
+  if (yearVal) chapterMeta += `date=${yearVal}\n`;
+  if (genreVal) chapterMeta += `genre=${genreVal}\n`;
+  if (descVal) chapterMeta += `comment=${descVal}\n`;
   let cursorMs = 0;
   for (let i = 0; i < tracks.length; i++) {
     const track = tracks[i];
@@ -343,22 +428,27 @@ const compileM4B = async () => {
     "combined.mp3",
   ]);
 
-  // Step 2: convert to AAC/M4B with metadata + chapters
+  // Step 2: convert to AAC/M4B with metadata + chapters (+ optional cover)
   updateStatus("Converting to M4B…");
   showProgress(25);
-  await ffmpeg.exec([
-    "-y",
-    "-i", "combined.mp3",
-    "-i", "chapters.txt",
+
+  const convertArgs = ["-y", "-i", "combined.mp3", "-i", "chapters.txt"];
+  if (hasCover) {
+    convertArgs.push("-i", "cover.jpg");
+    convertArgs.push("-map", "0:a", "-map", "2:v");
+    convertArgs.push("-c:v", "mjpeg", "-disposition:v", "attached_pic");
+  }
+  convertArgs.push(
     "-map_metadata", "1",
     "-map_chapters", "1",
     "-c:a", "aac",
     "-b:a", "96k",
-    "-vn",
     "-movflags", "+faststart",
     "-f", "mp4",
     "audiobook.m4b",
-  ]);
+  );
+  if (!hasCover) convertArgs.splice(convertArgs.indexOf("-f"), 0, "-vn");
+  await ffmpeg.exec(convertArgs);
 
   updateStatus("Preparing download…");
   showProgress(95);
@@ -372,6 +462,7 @@ const compileM4B = async () => {
   await ffmpeg.deleteFile("chapters.txt").catch(() => {});
   await ffmpeg.deleteFile("combined.mp3").catch(() => {});
   await ffmpeg.deleteFile("audiobook.m4b").catch(() => {});
+  if (hasCover) await ffmpeg.deleteFile("cover.jpg").catch(() => {});
 
   // Trigger download
   const slug = titleVal
@@ -397,11 +488,34 @@ const compileM4B = async () => {
 // ---------------------------------------------------------------------------
 // Event listeners
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Cover art events
+// ---------------------------------------------------------------------------
+coverPreview.addEventListener("click", () => coverInput.click());
+coverUploadBtn.addEventListener("click", () => coverInput.click());
+
+coverInput.addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+  if (file) {
+    setCover(file);
+    coverInput.value = "";
+  }
+});
+
+coverRemoveBtn.addEventListener("click", removeCover);
+
+// ---------------------------------------------------------------------------
+// Other event listeners
+// ---------------------------------------------------------------------------
 clearAllButton.addEventListener("click", () => {
   tracks = [];
   inferredBook = null;
+  removeCover();
   titleInput.value = "Untitled Audiobook";
   authorInput.value = "Unknown";
+  yearInput.value = "";
+  genreInput.value = "Audiobook";
+  descriptionInput.value = "";
   refreshTrackList();
 });
 

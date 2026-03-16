@@ -203,17 +203,14 @@ input[type="text"]:focus {
 }
 
 .track-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .track-meta {
   color: #8ea5d9;
   font-size: 0.8rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .track-actions {
@@ -274,6 +271,104 @@ button:hover:not(:disabled) {
   padding: 1rem;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Metadata panel */
+.meta-section {
+  margin-bottom: 1.5rem;
+}
+
+.meta-section h2 {
+  margin: 0 0 1rem;
+}
+
+.meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.meta-row.full {
+  grid-template-columns: 1fr;
+}
+
+textarea {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #f7fbff;
+  background: rgba(10, 15, 25, 0.6);
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: #6eb5ff;
+  box-shadow: 0 0 0 3px rgba(110, 181, 255, 0.15);
+}
+
+/* Cover art */
+.cover-area {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+
+.cover-preview {
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(10, 15, 25, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease;
+}
+
+.cover-preview:hover {
+  border-color: #6eb5ff;
+}
+
+.cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.cover-preview .placeholder {
+  text-align: center;
+  color: #6b7fa8;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 0.5rem;
+}
+
+.cover-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.cover-info small {
+  color: #8ea5d9;
+  font-size: 0.78rem;
+}
+
+.cover-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 a {

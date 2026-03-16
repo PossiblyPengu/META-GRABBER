@@ -38,15 +38,55 @@
       <main>
         <section class="panel uploader">
           <form id="compile-form">
-            <div class="field-grid">
-              <label>
-                <span>Title</span>
-                <input type="text" name="title" value="Untitled Audiobook" />
-              </label>
-              <label>
-                <span>Author</span>
-                <input type="text" name="author" value="Unknown" />
-              </label>
+            <div class="meta-section">
+              <h2>Book Metadata</h2>
+
+              <div class="cover-area">
+                <div class="cover-preview" id="cover-preview" title="Click to upload cover art">
+                  <input
+                    id="cover-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    hidden
+                  />
+                  <div class="placeholder" id="cover-placeholder">
+                    Click to add<br />cover art
+                  </div>
+                </div>
+                <div class="cover-info">
+                  <div class="meta-row">
+                    <label>
+                      <span>Title</span>
+                      <input type="text" name="title" value="Untitled Audiobook" />
+                    </label>
+                    <label>
+                      <span>Author</span>
+                      <input type="text" name="author" value="Unknown" />
+                    </label>
+                  </div>
+                  <div class="meta-row">
+                    <label>
+                      <span>Year</span>
+                      <input type="text" name="year" placeholder="e.g. 2024" />
+                    </label>
+                    <label>
+                      <span>Genre</span>
+                      <input type="text" name="genre" value="Audiobook" />
+                    </label>
+                  </div>
+                  <div class="cover-actions">
+                    <button type="button" id="cover-upload-btn" class="ghost">Upload cover</button>
+                    <button type="button" id="cover-remove-btn" class="ghost" hidden>Remove cover</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="meta-row full" style="margin-top: 0.75rem;">
+                <label>
+                  <span>Description</span>
+                  <textarea name="description" rows="2" placeholder="Optional book description or narrator info"></textarea>
+                </label>
+              </div>
             </div>
 
             <div class="drop-zone" id="drop-zone">
