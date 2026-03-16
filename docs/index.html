@@ -39,7 +39,26 @@
         <section class="panel uploader">
           <form id="compile-form">
             <div class="meta-section">
-              <h2>Book Metadata</h2>
+              <div class="meta-header">
+                <h2>Book Metadata</h2>
+                <div class="lookup-bar">
+                  <input
+                    type="text"
+                    id="lookup-query"
+                    placeholder="Search by title or author…"
+                  />
+                  <button type="button" id="lookup-btn" class="ghost">
+                    Look up
+                  </button>
+                </div>
+              </div>
+
+              <div class="lookup-results" id="lookup-results" hidden>
+                <div class="lookup-results-list" id="lookup-results-list"></div>
+                <button type="button" id="lookup-dismiss" class="ghost" style="margin-top:0.5rem;font-size:0.8rem;">
+                  Dismiss results
+                </button>
+              </div>
 
               <div class="cover-area">
                 <div class="cover-preview" id="cover-preview" title="Click to upload cover art">

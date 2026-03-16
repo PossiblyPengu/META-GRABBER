@@ -1,6 +1,7 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, buildChapterNames } from "./book-parser.js";
+import { searchBooks, fetchCoverBlob } from "./book-lookup.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -24,6 +25,11 @@ const coverInput = document.getElementById("cover-input");
 const coverPlaceholder = document.getElementById("cover-placeholder");
 const coverUploadBtn = document.getElementById("cover-upload-btn");
 const coverRemoveBtn = document.getElementById("cover-remove-btn");
+const lookupQuery = document.getElementById("lookup-query");
+const lookupBtn = document.getElementById("lookup-btn");
+const lookupResults = document.getElementById("lookup-results");
+const lookupResultsList = document.getElementById("lookup-results-list");
+const lookupDismiss = document.getElementById("lookup-dismiss");
 
 // ---------------------------------------------------------------------------
 // State
@@ -333,6 +339,15 @@ const addFiles = async (fileList) => {
   }
 
   refreshTrackList();
+
+  // Auto-search for book metadata using inferred title/author
+  const searchQuery = [inferredBook?.title, inferredBook?.author]
+    .filter(Boolean)
+    .join(" ");
+  if (searchQuery.length >= 3) {
+    lookupQuery.value = searchQuery;
+    performLookup(searchQuery);
+  }
 };
 
 const moveTrack = (from, to) => {
@@ -489,6 +504,81 @@ const compileM4B = async () => {
 // Event listeners
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// Book lookup
+// ---------------------------------------------------------------------------
+const performLookup = async (query) => {
+  if (!query || query.trim().length < 2) return;
+  lookupResultsList.innerHTML = '<div class="lookup-spinner">Searching…</div>';
+  lookupResults.hidden = false;
+
+  const results = await searchBooks(query, 6);
+
+  if (!results.length) {
+    lookupResultsList.innerHTML = '<div class="lookup-spinner">No results found.</div>';
+    return;
+  }
+
+  lookupResultsList.innerHTML = "";
+  for (const result of results) {
+    const card = document.createElement("div");
+    card.className = "lookup-card";
+
+    if (result.coverUrl) {
+      const img = document.createElement("img");
+      img.src = result.coverUrl;
+      img.alt = result.title;
+      img.loading = "lazy";
+      card.appendChild(img);
+    } else {
+      const noCover = document.createElement("div");
+      noCover.className = "no-cover";
+      noCover.textContent = "No cover";
+      card.appendChild(noCover);
+    }
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "lookup-card-title";
+    titleEl.textContent = result.title;
+    card.appendChild(titleEl);
+
+    if (result.author) {
+      const authorEl = document.createElement("div");
+      authorEl.className = "lookup-card-author";
+      authorEl.textContent = result.author;
+      card.appendChild(authorEl);
+    }
+
+    const sourceEl = document.createElement("div");
+    sourceEl.className = "lookup-card-source";
+    sourceEl.textContent = result.source === "google" ? "Google Books" : "Open Library";
+    card.appendChild(sourceEl);
+
+    card.addEventListener("click", () => applyLookupResult(result));
+    lookupResultsList.appendChild(card);
+  }
+};
+
+const applyLookupResult = async (result) => {
+  if (result.title) titleInput.value = result.title;
+  if (result.author) authorInput.value = result.author;
+  if (result.year) yearInput.value = result.year;
+  if (result.genre) genreInput.value = result.genre;
+  if (result.description) descriptionInput.value = result.description;
+
+  // Fetch and apply cover art
+  if (result.coverUrl) {
+    updateStatus("Fetching cover…");
+    const blob = await fetchCoverBlob(result.coverUrl);
+    if (blob && blob.size > 0) {
+      setCover(blob);
+    }
+    updateStatus("Idle");
+  }
+
+  lookupResults.hidden = true;
+};
+
+// ---------------------------------------------------------------------------
 // Cover art events
 // ---------------------------------------------------------------------------
 coverPreview.addEventListener("click", () => coverInput.click());
@@ -505,6 +595,22 @@ coverInput.addEventListener("change", (event) => {
 coverRemoveBtn.addEventListener("click", removeCover);
 
 // ---------------------------------------------------------------------------
+// Book lookup events
+// ---------------------------------------------------------------------------
+lookupBtn.addEventListener("click", () => performLookup(lookupQuery.value));
+
+lookupQuery.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    performLookup(lookupQuery.value);
+  }
+});
+
+lookupDismiss.addEventListener("click", () => {
+  lookupResults.hidden = true;
+});
+
+// ---------------------------------------------------------------------------
 // Other event listeners
 // ---------------------------------------------------------------------------
 clearAllButton.addEventListener("click", () => {
@@ -516,6 +622,8 @@ clearAllButton.addEventListener("click", () => {
   yearInput.value = "";
   genreInput.value = "Audiobook";
   descriptionInput.value = "";
+  lookupQuery.value = "";
+  lookupResults.hidden = true;
   refreshTrackList();
 });
 

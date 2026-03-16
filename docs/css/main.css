@@ -278,8 +278,131 @@ button:hover:not(:disabled) {
   margin-bottom: 1.5rem;
 }
 
-.meta-section h2 {
-  margin: 0 0 1rem;
+.meta-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.meta-header h2 {
+  margin: 0;
+}
+
+.lookup-bar {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  max-width: 360px;
+}
+
+.lookup-bar input {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: #f7fbff;
+  background: rgba(10, 15, 25, 0.6);
+  font-family: inherit;
+}
+
+.lookup-bar input:focus {
+  outline: none;
+  border-color: #6eb5ff;
+  box-shadow: 0 0 0 3px rgba(110, 181, 255, 0.15);
+}
+
+.lookup-results {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(9, 16, 27, 0.8);
+}
+
+.lookup-results-list {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+}
+
+.lookup-card {
+  flex-shrink: 0;
+  width: 150px;
+  scroll-snap-align: start;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 0.6rem;
+  background: rgba(15, 22, 35, 0.9);
+  transition: border-color 0.2s ease, transform 0.15s ease;
+  text-align: center;
+}
+
+.lookup-card:hover {
+  border-color: #6eb5ff;
+  transform: translateY(-2px);
+}
+
+.lookup-card img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lookup-card .no-cover {
+  width: 100%;
+  height: 160px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7fa8;
+  font-size: 0.75rem;
+}
+
+.lookup-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.4rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lookup-card-author {
+  font-size: 0.72rem;
+  color: #8ea5d9;
+  margin-top: 0.15rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lookup-card-source {
+  font-size: 0.65rem;
+  color: #5a6f96;
+  margin-top: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lookup-spinner {
+  text-align: center;
+  padding: 1rem;
+  color: #8ea5d9;
+  font-size: 0.9rem;
 }
 
 .meta-row {
