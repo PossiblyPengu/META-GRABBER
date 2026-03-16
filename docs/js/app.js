@@ -1,5 +1,6 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
+import { inferBook, buildChapterNames } from "./book-parser.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -19,9 +20,10 @@ const authorInput = form.elements.namedItem("author");
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let tracks = []; // { file: File, meta: null | { duration, bitrate, title, artist, album } }
+let tracks = []; // { file: File, meta: null | { duration, bitrate, title, artist, album }, chapterName: null | string }
 let ffmpeg = null;
 let ffmpegReady = false;
+let inferredBook = null; // result from inferBook()
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -174,22 +176,20 @@ const refreshTrackList = () => {
 
     const nameEl = document.createElement("span");
     nameEl.className = "track-name";
-    nameEl.textContent = track.file.name;
+    nameEl.textContent = track.chapterName || track.file.name;
 
     const details = document.createElement("small");
     details.className = "track-meta";
     const megabytes = (track.file.size / (1024 * 1024)).toFixed(1);
+    const detailParts = [];
+    if (track.chapterName) detailParts.push(track.file.name);
     if (track.meta) {
-      const parts = [];
-      if (track.meta.title) parts.push(track.meta.title);
-      if (track.meta.artist) parts.push(track.meta.artist);
-      parts.push(formatDuration(track.meta.duration));
-      parts.push(`${track.meta.bitrate || "?"}kbps`);
-      parts.push(`${megabytes} MB`);
-      details.textContent = parts.join(" \u00b7 ");
-    } else {
-      details.textContent = `${megabytes} MB`;
+      if (track.meta.artist && !track.chapterName) detailParts.push(track.meta.artist);
+      detailParts.push(formatDuration(track.meta.duration));
+      detailParts.push(`${track.meta.bitrate || "?"}kbps`);
     }
+    detailParts.push(`${megabytes} MB`);
+    details.textContent = detailParts.join(" \u00b7 ");
 
     info.append(nameEl, details);
 
@@ -231,7 +231,7 @@ const addFiles = async (fileList) => {
       file.type === "audio/mpeg" || file.name.toLowerCase().endsWith(".mp3")
   );
 
-  const newTracks = mp3Files.map((file) => ({ file, meta: null }));
+  const newTracks = mp3Files.map((file) => ({ file, meta: null, chapterName: null }));
   tracks = [...tracks, ...newTracks];
   refreshTrackList();
 
@@ -241,17 +241,23 @@ const addFiles = async (fileList) => {
   });
   await Promise.all(metaPromises);
 
-  // Auto-populate title/author from first track
-  if (tracks.length && tracks[0].meta) {
-    const first = tracks[0].meta;
-    if (first.album && titleInput.value === "Untitled Audiobook") {
-      titleInput.value = first.album;
-    } else if (first.title && titleInput.value === "Untitled Audiobook") {
-      titleInput.value = first.title;
-    }
-    if (first.artist && authorInput.value === "Unknown") {
-      authorInput.value = first.artist;
-    }
+  // Run book inference across ALL tracks (filenames + ID3 consensus)
+  const allMeta = tracks.map((t) => t.meta);
+  inferredBook = inferBook(tracks, allMeta);
+
+  // Apply inferred chapter names
+  if (inferredBook.chapters) {
+    inferredBook.chapters.forEach((name, i) => {
+      if (i < tracks.length) tracks[i].chapterName = name;
+    });
+  }
+
+  // Auto-populate title/author if still at defaults
+  if (inferredBook.title && titleInput.value === "Untitled Audiobook") {
+    titleInput.value = inferredBook.title;
+  }
+  if (inferredBook.author && authorInput.value === "Unknown") {
+    authorInput.value = inferredBook.author;
   }
 
   refreshTrackList();
@@ -299,17 +305,20 @@ const compileM4B = async () => {
     new TextEncoder().encode(listContent)
   );
 
-  // Build chapter metadata file
+  // Build chapter metadata file using inferred chapter names
   let chapterMeta = ";FFMETADATA1\n";
   chapterMeta += `title=${titleVal}\n`;
   chapterMeta += `artist=${authorVal}\n`;
   let cursorMs = 0;
-  for (const track of tracks) {
+  for (let i = 0; i < tracks.length; i++) {
+    const track = tracks[i];
     const dur = track.meta?.duration || 0;
     const durationMs = Math.round(dur * 1000);
     if (durationMs > 0) {
       const chTitle =
-        track.meta?.title || track.file.name.replace(/\.mp3$/i, "");
+        track.chapterName ||
+        track.meta?.title ||
+        track.file.name.replace(/\.mp3$/i, "");
       chapterMeta += "\n[CHAPTER]\nTIMEBASE=1/1000\n";
       chapterMeta += `START=${cursorMs}\n`;
       chapterMeta += `END=${cursorMs + durationMs}\n`;
@@ -390,6 +399,7 @@ const compileM4B = async () => {
 // ---------------------------------------------------------------------------
 clearAllButton.addEventListener("click", () => {
   tracks = [];
+  inferredBook = null;
   titleInput.value = "Untitled Audiobook";
   authorInput.value = "Unknown";
   refreshTrackList();

@@ -133,23 +133,126 @@ def _concat_and_convert(
     list_file.unlink(missing_ok=True)
 
     # Build chapter markers from individual file durations
+    all_meta = [_extract_metadata(fp) for fp in files]
+    filenames = [fp.name for fp in files]
+    chapter_names = _infer_chapter_names(filenames, all_meta)
+
     chapters: List[Dict[str, Any]] = []
     cursor_ms = 0
-    for file_path in files:
-        meta = _extract_metadata(file_path)
+    for i, meta in enumerate(all_meta):
         duration_ms = int(meta["duration"] * 1000)
         if duration_ms > 0:
-            ch_title = meta["title"] or file_path.stem.split("_", 1)[-1]
             chapters.append({
                 "start_ms": cursor_ms,
                 "end_ms": cursor_ms + duration_ms,
-                "title": ch_title,
+                "title": chapter_names[i],
             })
             cursor_ms += duration_ms
 
     _build_chapters_metadata(ffmpeg_path, output_path, chapters)
 
     return output_path
+
+
+def _most_common(values: List[str]) -> str | None:
+    """Return the most frequently occurring non-empty string."""
+    cleaned = [v.strip() for v in values if v and v.strip()]
+    if not cleaned:
+        return None
+    counts: Dict[str, int] = {}
+    originals: Dict[str, str] = {}
+    for v in cleaned:
+        key = v.lower()
+        counts[key] = counts.get(key, 0) + 1
+        originals[key] = v
+    best_key = max(counts, key=counts.get)
+    return originals[best_key]
+
+
+_FILENAME_PATTERNS = [
+    # Author - Title - Chapter 01 / Author - Title - 01 - Name
+    (re.compile(r"^(.+?)\s*[-–—]\s*(.+?)\s*[-–—]\s*(?:(?:ch(?:apter)?\.?\s*)?(\d+)\s*[-–—.]?\s*(.+?))?\.mp3$", re.I),
+     lambda m: (m.group(1).strip(), m.group(2).strip(), m.group(4).strip() if m.group(4) else None)),
+    # Title - 01 - Chapter Name  /  Title - Chapter 01
+    (re.compile(r"^(.+?)\s*[-–—]\s*(?:ch(?:apter)?\.?\s*)?(\d+)\s*(?:[-–—.]\s*(.+?))?\.mp3$", re.I),
+     lambda m: (None, m.group(1).strip(), m.group(3).strip() if m.group(3) else None)),
+    # Title Ch01.mp3
+    (re.compile(r"^(.+?)\s+ch(?:apter)?\.?\s*(\d+)\.mp3$", re.I),
+     lambda m: (None, m.group(1).strip(), None)),
+    # 01 - Chapter Name.mp3
+    (re.compile(r"^(\d+)\s*[-–—.]\s*(.+?)\.mp3$", re.I),
+     lambda m: (None, None, m.group(2).strip())),
+    # Chapter 01.mp3
+    (re.compile(r"^ch(?:apter)?\.?\s*(\d+)\.mp3$", re.I),
+     lambda m: (None, None, None)),
+    # 01.mp3
+    (re.compile(r"^(\d+)\.mp3$", re.I),
+     lambda m: (None, None, None)),
+]
+
+
+def _clean_chapter_name(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    for noise in [
+        re.compile(r"^\d+\s*[-–—.)\]]\s*"),
+        re.compile(r"^ch(?:apter)?\.?\s*", re.I),
+        re.compile(r"^track\s*\d*\s*[-–—.]?\s*", re.I),
+    ]:
+        cleaned = noise.sub("", cleaned)
+    cleaned = re.sub(r"\s*[(\[]\d+[)\]]\s*$", "", cleaned)
+    cleaned = cleaned.replace("_", " ").strip()
+    if cleaned and cleaned == cleaned.lower():
+        cleaned = cleaned.title()
+    return cleaned or None
+
+
+def _parse_filename(filename: str) -> tuple[str | None, str | None, str | None]:
+    """Returns (author, title, chapter_name) from a filename."""
+    basename = Path(filename).name
+    for pattern, extractor in _FILENAME_PATTERNS:
+        m = pattern.match(basename)
+        if m:
+            return extractor(m)
+    # Fallback
+    stem = Path(basename).stem.replace("_", " ").strip()
+    return (None, None, stem)
+
+
+def _infer_chapter_names(
+    filenames: List[str], metadata_list: List[Dict[str, Any]]
+) -> List[str]:
+    """Build smart chapter names from filenames and ID3 tags."""
+    parsed = [_parse_filename(fn) for fn in filenames]
+    chapter_names = []
+    for i, (_author, _title, ch_name) in enumerate(parsed):
+        meta = metadata_list[i] if i < len(metadata_list) else {}
+        num = i + 1
+        clean_id3 = _clean_chapter_name(meta.get("title"))
+        clean_fn = _clean_chapter_name(ch_name)
+        name = clean_id3 or clean_fn
+        if name:
+            has_num = bool(re.match(r"^\d", name)) or bool(re.search(r"chapter\s*\d", name, re.I))
+            chapter_names.append(name if has_num else f"Chapter {num}: {name}")
+        else:
+            chapter_names.append(f"Chapter {num}")
+    return chapter_names
+
+
+def _infer_book_info(
+    filenames: List[str], metadata_list: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Infer book title and author from filenames + ID3 consensus."""
+    parsed = [_parse_filename(fn) for fn in filenames]
+    fn_titles = [t for _, t, _ in parsed if t]
+    fn_authors = [a for a, _, _ in parsed if a]
+    id3_albums = [m.get("album") for m in metadata_list if m.get("album")]
+    id3_artists = [m.get("artist") for m in metadata_list if m.get("artist")]
+    return {
+        "title": _most_common(id3_albums) or _most_common(fn_titles),
+        "author": _most_common(id3_artists) or _most_common(fn_authors),
+    }
 
 
 def _extract_metadata(file_path: Path) -> Dict[str, Any]:
@@ -235,12 +338,14 @@ async def _persist_upload(upload_file: UploadFile, destination: Path) -> None:
 async def extract_metadata(
     files: List[UploadFile] = File(..., description="MP3 files to inspect"),
 ) -> JSONResponse:
-    """Return ID3 metadata for each uploaded MP3 without converting."""
+    """Return ID3 metadata, inferred book info, and chapter names."""
     working_dir = Path(tempfile.mkdtemp(prefix="m4b_meta_"))
     results = []
+    filenames = []
     try:
         for idx, upload in enumerate(files, start=1):
             filename = upload.filename or f"track_{idx}.mp3"
+            filenames.append(filename)
             target = working_dir / f"{idx:03d}_{_sanitize_filename(filename)}"
             await _persist_upload(upload, target)
             meta = await asyncio.to_thread(_extract_metadata, target)
@@ -248,7 +353,14 @@ async def extract_metadata(
             results.append(meta)
     finally:
         shutil.rmtree(working_dir, ignore_errors=True)
-    return JSONResponse(results)
+
+    book_info = _infer_book_info(filenames, results)
+    chapter_names = _infer_chapter_names(filenames, results)
+    return JSONResponse({
+        "tracks": results,
+        "book": book_info,
+        "chapters": chapter_names,
+    })
 
 
 @app.post("/api/compile")
