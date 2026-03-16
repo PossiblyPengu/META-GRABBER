@@ -18,15 +18,11 @@
   </head>
   <body>
     <div class="page-shell">
+      <!-- Top bar -->
       <header>
-        <div>
+        <div class="header-text">
           <p class="eyebrow">Audio toolkit</p>
           <h1>M4B Foundry</h1>
-          <p class="lede">
-            Seamlessly stitch MP3 chapters into a polished M4B audiobook complete
-            with title metadata. Upload tracks, arrange them, and export in one
-            click. Everything runs in your browser &mdash; no server required.
-          </p>
         </div>
         <div class="status-card" id="status-card">
           <div class="status-label">Status</div>
@@ -37,131 +33,112 @@
         </div>
       </header>
 
-      <main>
-        <section class="panel uploader">
-          <form id="compile-form">
-            <div class="meta-section">
-              <div class="meta-header">
-                <h2>Book Metadata</h2>
-                <div class="lookup-bar">
-                  <input
-                    type="text"
-                    id="lookup-query"
-                    placeholder="Search by title or author…"
-                  />
-                  <button type="button" id="lookup-btn" class="ghost">
-                    Look up
-                  </button>
-                </div>
-              </div>
+      <form id="compile-form">
+        <!-- Drop zone — full width -->
+        <div class="drop-zone" id="drop-zone">
+          <input
+            id="file-input"
+            type="file"
+            accept="audio/mpeg,.mp3"
+            multiple
+            hidden
+          />
+          <div class="drop-content">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.45"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p class="drop-title">Drop MP3 files here or click to browse</p>
+            <small>Chapters auto-sort by track number</small>
+          </div>
+        </div>
 
-              <div class="lookup-results" id="lookup-results" hidden>
-                <div class="lookup-results-list" id="lookup-results-list"></div>
-                <button type="button" id="lookup-dismiss" class="ghost" style="margin-top:0.5rem;font-size:0.8rem;">
-                  Dismiss results
-                </button>
-              </div>
-
-              <div class="cover-area">
-                <div class="cover-preview" id="cover-preview" title="Click to upload cover art">
-                  <input
-                    id="cover-input"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    hidden
-                  />
-                  <div class="placeholder" id="cover-placeholder">
-                    Click to add<br />cover art
-                  </div>
-                </div>
-                <div class="cover-info">
-                  <div class="meta-row">
-                    <label>
-                      <span>Title</span>
-                      <input type="text" name="title" value="Untitled Audiobook" />
-                    </label>
-                    <label>
-                      <span>Author</span>
-                      <input type="text" name="author" value="Unknown" />
-                    </label>
-                  </div>
-                  <div class="meta-row">
-                    <label>
-                      <span>Year</span>
-                      <input type="text" name="year" placeholder="e.g. 2024" />
-                    </label>
-                    <label>
-                      <span>Genre</span>
-                      <input type="text" name="genre" value="Audiobook" />
-                    </label>
-                  </div>
-                  <div class="cover-actions">
-                    <button type="button" id="cover-upload-btn" class="ghost">Upload cover</button>
-                    <button type="button" id="cover-remove-btn" class="ghost" hidden>Remove cover</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="meta-row full" style="margin-top: 0.75rem;">
-                <label>
-                  <span>Description</span>
-                  <textarea name="description" rows="2" placeholder="Optional book description or narrator info"></textarea>
-                </label>
-              </div>
+        <!-- Two-column workspace -->
+        <div class="workspace">
+          <!-- Left: tracklist -->
+          <section class="panel tracklist-panel">
+            <div class="tracks-header">
+              <h2>Tracklist</h2>
+              <button type="button" id="clear-all" class="ghost">Clear all</button>
             </div>
-
-            <div class="drop-zone" id="drop-zone">
-              <input
-                id="file-input"
-                type="file"
-                accept="audio/mpeg,.mp3"
-                multiple
-                hidden
-              />
-              <div class="drop-content">
-                <p class="drop-title">Drop MP3 files here</p>
-                <p class="drop-subtitle">or click to browse</p>
-                <small>Files upload in the order listed below.</small>
-              </div>
-            </div>
-
-            <div class="tracks">
-              <div class="tracks-header">
-                <h2>Tracklist</h2>
-                <button type="button" id="clear-all" class="ghost">
-                  Clear all
-                </button>
-              </div>
-              <ul id="track-list" aria-live="polite"></ul>
-            </div>
+            <ul id="track-list" aria-live="polite"></ul>
 
             <div class="actions">
               <button type="submit" class="primary" id="compile-button">
                 Compile to M4B
               </button>
             </div>
-          </form>
-        </section>
+          </section>
 
-        <section class="panel info">
-          <h2>How it works</h2>
-          <ol>
-            <li>Drop your MP3 chapters in playback order.</li>
-            <li>Fine-tune order or remove tracks if needed.</li>
-            <li>Click &ldquo;Compile to M4B&rdquo; to merge &amp; convert.</li>
-            <li>
-              Download the finished .m4b file once the process completes.
-              Everything stays in your browser &mdash; nothing is uploaded to a
-              server.
-            </li>
-          </ol>
-          <p class="note">
-            <strong>Powered by FFmpeg.wasm</strong> &mdash; the first load
-            downloads ~31&nbsp;MB of WebAssembly. Subsequent visits use the
-            browser cache.
-          </p>
-        </section>
-      </main>
+          <!-- Right: metadata sidebar -->
+          <aside class="panel meta-panel">
+            <!-- Lookup -->
+            <div class="lookup-bar">
+              <input
+                type="text"
+                id="lookup-query"
+                placeholder="Search by title or author…"
+              />
+              <button type="button" id="lookup-btn" class="ghost">Look up</button>
+            </div>
+
+            <div class="lookup-results" id="lookup-results" hidden>
+              <div class="lookup-results-list" id="lookup-results-list"></div>
+              <button type="button" id="lookup-dismiss" class="ghost dismiss-btn">
+                Dismiss
+              </button>
+            </div>
+
+            <!-- Cover + fields -->
+            <div class="cover-area">
+              <div class="cover-preview" id="cover-preview" title="Click to upload cover art">
+                <input
+                  id="cover-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  hidden
+                />
+                <div class="placeholder" id="cover-placeholder">
+                  Click to add<br />cover art
+                </div>
+              </div>
+              <div class="cover-btns">
+                <button type="button" id="cover-upload-btn" class="ghost small">Upload</button>
+                <button type="button" id="cover-remove-btn" class="ghost small" hidden>Remove</button>
+              </div>
+            </div>
+
+            <div class="meta-fields">
+              <label>
+                <span>Title</span>
+                <input type="text" name="title" value="Untitled Audiobook" />
+              </label>
+              <label>
+                <span>Author</span>
+                <input type="text" name="author" value="Unknown" />
+              </label>
+              <div class="meta-row">
+                <label>
+                  <span>Year</span>
+                  <input type="text" name="year" placeholder="e.g. 2024" />
+                </label>
+                <label>
+                  <span>Genre</span>
+                  <input type="text" name="genre" value="Audiobook" />
+                </label>
+              </div>
+              <label>
+                <span>Description</span>
+                <textarea name="description" rows="3" placeholder="Optional book description or narrator info"></textarea>
+              </label>
+            </div>
+
+            <div class="info-note">
+              <small>
+                Everything runs in your browser. The first load downloads
+                ~31&nbsp;MB of FFmpeg WebAssembly; subsequent visits use cache.
+              </small>
+            </div>
+          </aside>
+        </div>
+      </form>
     </div>
 
     <script src="js/app.js" type="module"></script>

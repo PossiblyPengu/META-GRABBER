@@ -123,6 +123,27 @@ export const parseFilename = (filename) => {
 };
 
 /**
+ * Extract a numeric sort key from a filename.
+ * Looks for chapter numbers, leading numbers, or any number in the name.
+ * Returns a number (for sorting) or Infinity if no number found.
+ */
+export const extractSortKey = (filename) => {
+  const basename = filename.replace(/^.*[\\/]/, "");
+  const parsed = parseFilename(basename);
+  if (parsed.chapterNum != null) return parsed.chapterNum;
+
+  // Try to find a leading number
+  const leadingMatch = basename.match(/^(\d+)/);
+  if (leadingMatch) return parseInt(leadingMatch[1], 10);
+
+  // Try any number in the filename (prefer the last one, often the part number)
+  const allNums = basename.match(/\d+/g);
+  if (allNums?.length) return parseInt(allNums[allNums.length - 1], 10);
+
+  return Infinity;
+};
+
+/**
  * Parse all filenames and return aggregated book info.
  */
 export const parseFilenames = (filenames) => {

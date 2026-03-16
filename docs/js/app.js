@@ -1,6 +1,6 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
-import { inferBook, buildChapterNames } from "./book-parser.js";
+import { inferBook, buildChapterNames, extractSortKey } from "./book-parser.js";
 import { searchBooks, fetchCoverBlob } from "./book-lookup.js";
 
 // ---------------------------------------------------------------------------
@@ -289,6 +289,15 @@ const addFiles = async (fileList) => {
 
   const newTracks = mp3Files.map((file) => ({ file, meta: null, chapterName: null }));
   tracks = [...tracks, ...newTracks];
+
+  // Auto-sort all tracks by chapter/part number
+  tracks.sort((a, b) => {
+    const keyA = extractSortKey(a.file.name);
+    const keyB = extractSortKey(b.file.name);
+    if (keyA !== keyB) return keyA - keyB;
+    return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
+  });
+
   refreshTrackList();
 
   // Extract metadata in parallel
@@ -296,6 +305,17 @@ const addFiles = async (fileList) => {
     t.meta = await extractMetadata(t.file);
   });
   await Promise.all(metaPromises);
+
+  // Re-sort using ID3 track numbers if available (more authoritative)
+  const hasID3TrackNums = tracks.some((t) => t.meta?.track);
+  if (hasID3TrackNums) {
+    tracks.sort((a, b) => {
+      const numA = parseInt(a.meta?.track, 10) || Infinity;
+      const numB = parseInt(b.meta?.track, 10) || Infinity;
+      if (numA !== numB) return numA - numB;
+      return extractSortKey(a.file.name) - extractSortKey(b.file.name);
+    });
+  }
 
   // Run book inference across ALL tracks (filenames + ID3 consensus)
   const allMeta = tracks.map((t) => t.meta);
