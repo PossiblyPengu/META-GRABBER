@@ -148,17 +148,35 @@ export const searchBooks = async (query, maxResults = 5) => {
   return [...googleResults, ...uniqueOL];
 };
 
+const stripHtml = (raw) => {
+  if (!raw) return null;
+  return raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const normalizeOpenLibraryDescription = (desc) => {
+  if (!desc) return null;
+  if (typeof desc === "string") return stripHtml(desc);
+  if (typeof desc === "object") {
+    if (typeof desc.value === "string") return stripHtml(desc.value);
+    if (typeof desc.text === "string") return stripHtml(desc.text);
+    if (typeof desc.data === "string") return stripHtml(desc.data);
+  }
+  return null;
+};
+
+const mapChapterTitles = (entries) =>
+  entries.map((ch) => ch?.title || ch?.label || ch || "").filter(Boolean).map((name) => String(name));
+
 /**
- * Fetch chapter names for a specific book result.
- * For Google Books, uses the volumeId to get full details.
- * For Open Library, uses the work key to get the TOC.
- *
+ * Fetch richer details (description + chapters) for a selected book result.
  * @param {BookResult} result
- * @returns {Promise<string[]|null>}
+ * @returns {Promise<{description: string|null, chapters: string[]|null}>}
  */
-export const fetchChapters = async (result) => {
-  // If chapters were already included in search results
-  if (result.chapters?.length) return result.chapters;
+export const fetchBookDetails = async (result) => {
+  if (!result) return { description: null, chapters: null };
+
+  let description = result.description || null;
+  let chapters = result.chapters || null;
 
   if (result.source === "google" && result.volumeId) {
     try {
@@ -167,8 +185,13 @@ export const fetchChapters = async (result) => {
       );
       if (resp.ok) {
         const data = await resp.json();
-        const toc = data.volumeInfo?.tableOfContents;
-        if (toc?.length) return toc.map((ch) => ch.title || ch);
+        const info = data.volumeInfo || {};
+        if (!description && info.description) {
+          description = stripHtml(info.description);
+        }
+        if (!chapters && info.tableOfContents?.length) {
+          chapters = mapChapterTitles(info.tableOfContents);
+        }
       }
     } catch { /* ignore */ }
   }
@@ -180,16 +203,32 @@ export const fetchChapters = async (result) => {
       );
       if (resp.ok) {
         const data = await resp.json();
-        if (data.table_of_contents?.length) {
-          return data.table_of_contents.map(
-            (ch) => ch.title || ch.label || String(ch)
-          );
+        if (!chapters && data.table_of_contents?.length) {
+          chapters = mapChapterTitles(data.table_of_contents);
+        }
+        if (!description) {
+          description =
+            normalizeOpenLibraryDescription(data.description) ||
+            normalizeOpenLibraryDescription(data.first_sentence);
         }
       }
     } catch { /* ignore */ }
   }
 
-  return null;
+  return { description, chapters };
+};
+
+/**
+ * Fetch chapter names for a specific book result.
+ * For Google Books, uses the volumeId to get full details.
+ * For Open Library, uses the work key to get the TOC.
+ *
+ * @param {BookResult} result
+ * @returns {Promise<string[]|null>}
+ */
+export const fetchChapters = async (result) => {
+  const details = await fetchBookDetails(result);
+  return details.chapters;
 };
 
 /**

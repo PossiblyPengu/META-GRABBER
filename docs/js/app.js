@@ -1,7 +1,7 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, extractSortKey } from "./book-parser.js";
-import { searchBooks, fetchCoverBlob, fetchChapters } from "./book-lookup.js";
+import { searchBooks, fetchCoverBlob, fetchChapters, fetchBookDetails } from "./book-lookup.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -695,20 +695,22 @@ const applyLookupResult = async (result) => {
     if (blob && blob.size > 0) setCover(blob);
   }
 
+  updateStatus("Fetching book details...");
+  const { description, chapters } = await fetchBookDetails(result);
+  if (description && !descriptionInput.value.trim()) {
+    descriptionInput.value = description;
+  }
+
   // Fetch and apply chapter names
-  if (tracks.length) {
-    updateStatus("Fetching chapters...");
-    const apiChapters = await fetchChapters(result);
-    if (apiChapters?.length) {
-      const count = Math.min(apiChapters.length, tracks.length);
-      for (let i = 0; i < count; i++) {
-        tracks[i].chapterName = apiChapters[i];
-      }
-      for (let i = count; i < tracks.length; i++) {
-        tracks[i].chapterName = `Chapter ${i + 1}`;
-      }
-      refreshTrackList();
+  if (tracks.length && chapters?.length) {
+    const count = Math.min(chapters.length, tracks.length);
+    for (let i = 0; i < count; i++) {
+      tracks[i].chapterName = chapters[i];
     }
+    for (let i = count; i < tracks.length; i++) {
+      tracks[i].chapterName = `Chapter ${i + 1}`;
+    }
+    refreshTrackList();
   }
 
   setIdle();
