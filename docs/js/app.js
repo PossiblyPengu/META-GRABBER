@@ -21,6 +21,7 @@ const clearAllButton = $("clear-all");
 const compileButton = $("compile-button");
 const statusDot = $("status-dot");
 const statusText = $("status-text");
+const toolbarStatus = $("toolbar-status");
 const progressTrack = $("progress-track");
 const progressFill = $("progress-fill");
 const progressDialog = $("progress-dialog");
@@ -101,6 +102,7 @@ let lookupDebounceTimer = null;
 let lastCompiledBlob = null;
 let lastCompiledFilename = null;
 let onSessionChange = null;
+let progressDismissedManually = false;
 
 // ---------------------------------------------------------------------------
 // Wizard navigation
@@ -215,15 +217,17 @@ let progressHideTimer = null;
 const showProgressDialog = () => {
   if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
   progressDialog.hidden = false;
+  progressDismissedManually = false;
 };
 
 const hideProgressDialogDelayed = () => {
-  if (!progressDialog.hidden) {
-    progressHideTimer = setTimeout(() => {
-      progressDialog.hidden = true;
-      progressList.textContent = "";
-    }, 1200);
-  }
+  if (progressHideTimer) { clearTimeout(progressHideTimer); }
+  progressHideTimer = setTimeout(() => {
+    progressDialog.hidden = true;
+    progressList.textContent = "";
+    progressDismissedManually = false;
+    progressHideTimer = null;
+  }, 1200);
 };
 
 const appendProgressStep = (label, state = "pending") => {
@@ -240,7 +244,12 @@ const appendProgressStep = (label, state = "pending") => {
 
 progressDismiss?.addEventListener("click", () => {
   progressDialog.hidden = true;
-  progressList.textContent = "";
+  progressDismissedManually = true;
+});
+
+toolbarStatus?.addEventListener("click", () => {
+  if (!progressDialog.hidden || !progressList.children.length) return;
+  showProgressDialog();
 });
 
 const formatDuration = (seconds) => {
