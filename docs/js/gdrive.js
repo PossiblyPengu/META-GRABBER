@@ -9,7 +9,7 @@
 // Client ID is public by design in OAuth2 client-side flows.
 // API Key is restricted by HTTP referrer and Picker API only in Google Cloud Console.
 const GOOGLE_CLIENT_ID = "306789600163-6hrqppjduqchesalvqp400rj78hbku8l.apps.googleusercontent.com";
-const GOOGLE_API_KEY = "AIzaSyCK8hy5iO4_XdQPCdlo2Tz-elPuO-tZqFM";
+const GOOGLE_API_KEY = "AIzaSyCRyWZvo0VbiUQpzbYRqbN2o7Katf3PuvQ";
 
 // ---------------------------------------------------------------------------
 // Internal state
