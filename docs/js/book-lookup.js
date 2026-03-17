@@ -38,27 +38,34 @@ const searchGoogleBooks = async (query, maxResults = 5) => {
       const isbn13 = v.industryIdentifiers?.find((id) => id.type === "ISBN_13");
       const isbn10 = v.industryIdentifiers?.find((id) => id.type === "ISBN_10");
       const isbn = isbn13 || isbn10;
-      // Build cover URLs: prefer Google large, fallback to Open Library via ISBN
+      // Build cover URLs with multiple fallbacks for reliability
       const coverUrls = [];
       if (v.imageLinks) {
-        let gCover =
-          v.imageLinks.extraLarge ||
-          v.imageLinks.large ||
-          v.imageLinks.medium ||
-          v.imageLinks.thumbnail ||
-          v.imageLinks.smallThumbnail ||
-          null;
-        if (gCover) {
-          gCover = gCover.replace(/^http:/, "https:");
-          gCover = gCover.replace(/&edge=curl/i, "");
-          gCover = gCover.replace(/zoom=\d/, "zoom=3");
-          coverUrls.push(gCover);
+        // Collect all available sizes, prefer larger
+        const candidates = [
+          v.imageLinks.extraLarge,
+          v.imageLinks.large,
+          v.imageLinks.medium,
+          v.imageLinks.thumbnail,
+          v.imageLinks.smallThumbnail,
+        ].filter(Boolean);
+        const seen = new Set();
+        for (const raw of candidates) {
+          const cleaned = raw.replace(/^http:/, "https:").replace(/&edge=curl/i, "");
+          // Try multiple zoom levels for each candidate
+          for (const zoom of [2, 1, 0]) {
+            const url = /zoom=\d/.test(cleaned)
+              ? cleaned.replace(/zoom=\d/, `zoom=${zoom}`)
+              : cleaned;
+            if (!seen.has(url)) { seen.add(url); coverUrls.push(url); }
+          }
         }
       }
-      // Also try Open Library cover by ISBN as a fallback
+      // Open Library covers by ISBN (try both ISBN-13 and ISBN-10)
       if (isbn13?.identifier) {
         coverUrls.push(`https://covers.openlibrary.org/b/isbn/${isbn13.identifier}-L.jpg`);
-      } else if (isbn10?.identifier) {
+      }
+      if (isbn10?.identifier) {
         coverUrls.push(`https://covers.openlibrary.org/b/isbn/${isbn10.identifier}-L.jpg`);
       }
       const coverUrl = coverUrls[0] || null;
@@ -105,13 +112,16 @@ const searchOpenLibrary = async (query, maxResults = 5) => {
     return data.docs.map((doc) => {
       const coverId = doc.cover_i;
       const coverUrls = [];
-      // Prefer large cover by ID
+      // Cover by ID is most reliable for Open Library
       if (coverId) {
         coverUrls.push(`https://covers.openlibrary.org/b/id/${coverId}-L.jpg`);
+        coverUrls.push(`https://covers.openlibrary.org/b/id/${coverId}-M.jpg`);
       }
-      // Also try ISBN-based lookup (often more reliable)
+      // Also try ISBN-based lookups as fallback (first few ISBNs)
       if (doc.isbn?.length) {
-        coverUrls.push(`https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`);
+        for (const isbnVal of doc.isbn.slice(0, 3)) {
+          coverUrls.push(`https://covers.openlibrary.org/b/isbn/${isbnVal}-L.jpg`);
+        }
       }
       const coverUrl = coverUrls[0] || null;
       const docDescription =
@@ -325,25 +335,31 @@ export const fetchChapters = async (result) => {
 const fetchSingleCover = async (url) => {
   if (!url) return null;
 
-  // Try direct fetch first
+  // Try direct fetch first (fast path)
   try {
     const resp = await fetch(url, { mode: "cors" });
     if (resp.ok) {
       const blob = await resp.blob();
-      // Open Library returns a 1x1 transparent gif (43 bytes) for missing covers
-      if (blob.size > 500) return blob;
+      // Open Library returns a 1x1 transparent gif (43 bytes) or a small
+      // "no cover" placeholder (usually under 1KB) for missing covers.
+      // Valid cover images are virtually always > 1KB.
+      if (blob.size > 1000 && blob.type?.startsWith("image/")) return blob;
     }
   } catch { /* CORS blocked, try canvas fallback */ }
 
-  // Canvas fallback: load image with crossOrigin, draw to canvas, export
+  // Canvas fallback: load image element, draw to canvas, export as blob.
+  // This works for servers that set appropriate CORS headers on <img> but
+  // not on fetch (e.g. some CDN configurations).
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.referrerPolicy = "no-referrer";
+    const timeout = setTimeout(() => resolve(null), 8000);
     img.onload = () => {
+      clearTimeout(timeout);
       try {
-        // Reject tiny placeholder images
-        if (img.naturalWidth < 10 || img.naturalHeight < 10) {
+        // Reject tiny placeholder images (< 50px in either dimension)
+        if (img.naturalWidth < 50 || img.naturalHeight < 50) {
           resolve(null);
           return;
         }
@@ -353,7 +369,7 @@ const fetchSingleCover = async (url) => {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
         canvas.toBlob(
-          (blob) => resolve(blob && blob.size > 500 ? blob : null),
+          (blob) => resolve(blob && blob.size > 1000 ? blob : null),
           "image/jpeg",
           0.92
         );
@@ -361,7 +377,7 @@ const fetchSingleCover = async (url) => {
         resolve(null);
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => { clearTimeout(timeout); resolve(null); };
     img.src = url;
   });
 };

@@ -21,13 +21,11 @@ const clearAllButton = $("clear-all");
 const compileButton = $("compile-button");
 const statusDot = $("status-dot");
 const statusText = $("status-text");
-const toolbarStatus = $("toolbar-status");
 const progressTrack = $("progress-track");
 const progressFill = $("progress-fill");
 const progressDialog = $("progress-dialog");
 const progressList = $("progress-list");
 const progressDismiss = $("progress-dismiss");
-const progressDialogCard = progressDialog?.querySelector(".progress-dialog-card");
 const coverPreview = $("cover-preview");
 const coverUploadBtn = $("cover-upload-btn");
 const coverRemoveBtn = $("cover-remove-btn");
@@ -42,6 +40,7 @@ const uploadFileCount = $("upload-file-count");
 const uploadFileList = $("upload-file-list");
 const uploadAddMoreBtn = $("upload-add-more-btn");
 const uploadClearBtn = $("upload-clear-btn");
+const uploadNextBtn = $("upload-next-btn");
 
 // Google Drive
 const gdriveImportBtn = $("gdrive-import-btn");
@@ -105,15 +104,18 @@ let lastCompiledFilename = null;
 let onSessionChange = null;
 
 // ---------------------------------------------------------------------------
-// Wizard navigation
+// Upload file summary (shown when returning to upload step with files)
 // ---------------------------------------------------------------------------
 const refreshUploadSummary = () => {
+  const altActions = document.querySelector(".upload-alt-actions");
   if (!tracks.length) {
     uploadFileSummary.hidden = true;
     dropZone.hidden = false;
+    if (altActions) altActions.hidden = false;
     return;
   }
   dropZone.hidden = true;
+  if (altActions) altActions.hidden = true;
   uploadFileSummary.hidden = false;
 
   const totalSize = tracks.reduce((s, t) => s + t.file.size, 0);
@@ -138,6 +140,9 @@ const refreshUploadSummary = () => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Wizard navigation
+// ---------------------------------------------------------------------------
 const goToStep = (step) => {
   const nextIdx = stepOrder.indexOf(step);
   if (nextIdx < 0) return;
@@ -214,47 +219,28 @@ const hideProgress = () => {
 };
 
 let progressHideTimer = null;
-const setProgressDialogCardInteractive = (active) => {
-  if (!progressDialogCard) return;
-  if (active) {
-    progressDialogCard.setAttribute("tabindex", "0");
-    progressDialogCard.setAttribute("role", "button");
-    progressDialogCard.setAttribute("aria-label", "Show activity dialog");
-  } else {
-    progressDialogCard.removeAttribute("tabindex");
-    progressDialogCard.removeAttribute("role");
-    progressDialogCard.removeAttribute("aria-label");
-  }
-};
-
-const fullyHideProgressDialog = () => {
-  progressDialog.hidden = true;
-  progressDialog.classList.remove("collapsed");
-  progressList.textContent = "";
-  setProgressDialogCardInteractive(false);
-};
+let progressDismissedManually = false;
 
 const showProgressDialog = () => {
   if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
+  progressDismissedManually = false;
   progressDialog.hidden = false;
-  progressDialog.classList.remove("collapsed");
-  setProgressDialogCardInteractive(false);
-};
-
-const collapseProgressDialog = () => {
-  if (progressDialog.hidden) return;
-  if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
-  progressDialog.hidden = false;
-  progressDialog.classList.add("collapsed");
-  setProgressDialogCardInteractive(true);
 };
 
 const hideProgressDialogDelayed = () => {
-  if (progressHideTimer) { clearTimeout(progressHideTimer); }
-  progressHideTimer = setTimeout(() => {
-    fullyHideProgressDialog();
-    progressHideTimer = null;
-  }, 1200);
+  if (!progressDialog.hidden) {
+    progressHideTimer = setTimeout(() => {
+      progressDialog.hidden = true;
+      progressList.textContent = "";
+      progressDismissedManually = false;
+    }, 1200);
+  } else if (progressDismissedManually) {
+    // Dialog was dismissed but work finished — clean up after delay
+    progressHideTimer = setTimeout(() => {
+      progressList.textContent = "";
+      progressDismissedManually = false;
+    }, 1200);
+  }
 };
 
 const appendProgressStep = (label, state = "pending") => {
@@ -270,30 +256,22 @@ const appendProgressStep = (label, state = "pending") => {
 };
 
 progressDismiss?.addEventListener("click", () => {
-  collapseProgressDialog();
+  progressDialog.hidden = true;
+  progressDismissedManually = true;
 });
 
+// Click toolbar status to reopen dismissed progress dialog or download modal
+const toolbarStatus = $("toolbar-status");
 toolbarStatus?.addEventListener("click", () => {
-  if (progressDialog.hidden && progressList.children.length) {
-    showProgressDialog();
+  // Reopen Drive download modal if a download is in progress
+  if (gdriveDownloading && gdrivePickerModal.hidden) {
+    gdrivePickerModal.hidden = false;
     return;
   }
-  if (progressDialog.classList.contains("collapsed")) {
-    showProgressDialog();
-  }
-});
-
-progressDialogCard?.addEventListener("click", (e) => {
-  if (!progressDialog.classList.contains("collapsed")) return;
-  e.preventDefault();
-  showProgressDialog();
-});
-
-progressDialogCard?.addEventListener("keydown", (e) => {
-  if (!progressDialog.classList.contains("collapsed")) return;
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    showProgressDialog();
+  // Reopen progress dialog if it was dismissed
+  if (progressDialog.hidden && progressList.childElementCount > 0) {
+    progressDialog.hidden = false;
+    progressDismissedManually = false;
   }
 });
 
@@ -499,6 +477,9 @@ const addFiles = async (fileList) => {
 
   // Show loading state on upload panel
   dropZone.hidden = true;
+  uploadFileSummary.hidden = true;
+  const altActions = document.querySelector(".upload-alt-actions");
+  if (altActions) altActions.hidden = true;
   uploadStatus.hidden = false;
   uploadStatusText.textContent = `Reading ${mp3Files.length} file${mp3Files.length > 1 ? "s" : ""}...`;
 
@@ -571,8 +552,7 @@ const addFiles = async (fileList) => {
     matchResultsGrid.appendChild(empty);
   }
 
-  // Reset upload panel for potential re-use
-  dropZone.hidden = false;
+  // Reset upload panel — summary will show when user navigates back
   uploadStatus.hidden = true;
 };
 
@@ -595,6 +575,8 @@ const removeTrack = (index) => {
 // ---------------------------------------------------------------------------
 // Book lookup (step 2)
 // ---------------------------------------------------------------------------
+let lastLookupResults = [];
+
 const performLookup = async (query) => {
   if (!query || query.trim().length < 2) return;
 
@@ -606,6 +588,7 @@ const performLookup = async (query) => {
   matchResultsGrid.appendChild(spinner);
 
   const results = await searchBooks(query, 6);
+  lastLookupResults = results;
 
   if (!results.length) {
     spinner.textContent = "No results found. Try a different search.";
@@ -954,11 +937,14 @@ clearAllButton.addEventListener("click", () => {
   goToStep("upload");
 });
 
+// Upload summary buttons
+uploadAddMoreBtn.addEventListener("click", () => fileInput.click());
+uploadClearBtn.addEventListener("click", () => clearAllButton.click());
+uploadNextBtn.addEventListener("click", () => goToStep("match"));
+
 // Drop zone + file input
 dropZone.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
 addMoreBtn.addEventListener("click", () => fileInput.click());
-uploadAddMoreBtn.addEventListener("click", () => fileInput.click());
-uploadClearBtn.addEventListener("click", () => clearAllButton.click());
 
 dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
 dropZone.addEventListener("dragleave", () => { dropZone.classList.remove("dragover"); });
@@ -1138,9 +1124,21 @@ const navigateToFolder = async (folderId) => {
   }
 };
 
-gdrivePickerClose.addEventListener("click", () => closeDrivePicker([]));
-gdrivePickerCancel.addEventListener("click", () => closeDrivePicker([]));
-gdrivePickerModal.addEventListener("click", (e) => { if (e.target === gdrivePickerModal) closeDrivePicker([]); });
+let gdriveDownloading = false;
+
+gdrivePickerClose.addEventListener("click", () => {
+  if (gdriveDownloading) { gdrivePickerModal.hidden = true; return; }
+  closeDrivePicker([]);
+});
+gdrivePickerCancel.addEventListener("click", () => {
+  if (gdriveDownloading) { gdrivePickerModal.hidden = true; return; }
+  closeDrivePicker([]);
+});
+gdrivePickerModal.addEventListener("click", (e) => {
+  if (e.target !== gdrivePickerModal) return;
+  if (gdriveDownloading) { gdrivePickerModal.hidden = true; return; }
+  closeDrivePicker([]);
+});
 gdrivePickerSelect.addEventListener("click", () => closeDrivePicker([...pickerSelected.values()]));
 
 gdriveSelectAll.addEventListener("change", () => {
@@ -1219,6 +1217,7 @@ gdriveImportBtn.addEventListener("click", async () => {
 
     // Re-show modal (picker closed it)
     gdrivePickerModal.hidden = false;
+    gdriveDownloading = true;
 
     updateStatus(`Downloading ${selected.length} file${selected.length > 1 ? "s" : ""}...`);
 
@@ -1238,6 +1237,7 @@ gdriveImportBtn.addEventListener("click", async () => {
 
     // Brief pause so user sees 100% state
     await new Promise((r) => setTimeout(r, 600));
+    gdriveDownloading = false;
     gdrivePickerModal.hidden = true;
     hideDownloadProgress();
 
@@ -1245,6 +1245,7 @@ gdriveImportBtn.addEventListener("click", async () => {
     else setIdle();
   } catch (err) {
     console.error("Google Drive import failed:", err);
+    gdriveDownloading = false;
     gdrivePickerModal.hidden = true;
     hideDownloadProgress();
     updateStatus(err.message || "Google Drive import failed", "error");
