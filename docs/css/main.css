@@ -1167,10 +1167,17 @@ textarea {
   inset: 0;
   z-index: 300;
   background: rgba(0, 0, 0, 0.6);
-  display: flex;
   align-items: center;
   justify-content: center;
   animation: fadeIn 0.15s ease;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-overlay:not([hidden]) {
+  display: flex;
 }
 
 .modal-card {

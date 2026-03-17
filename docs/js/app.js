@@ -3,7 +3,7 @@ import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, extractSortKey } from "./book-parser.js";
 import { searchBooks, fetchCoverBlob, fetchBookDetails } from "./book-lookup.js";
 import { extractMetadata } from "./metadata.js";
-import { isSignedIn, signOut, onAuthChange, ensureAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
+import { ensureAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -38,8 +38,6 @@ const uploadStatusText = $("upload-status-text");
 // Google Drive
 const gdriveImportBtn = $("gdrive-import-btn");
 const gdriveExportBtn = $("gdrive-export-btn");
-const gdriveConnectBtn = $("gdrive-connect-btn");
-const gdriveConnectLabel = $("gdrive-connect-label");
 
 // Custom Drive picker
 const gdrivePickerModal = $("gdrive-picker-modal");
@@ -897,33 +895,6 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Google Drive — connection state
-// ---------------------------------------------------------------------------
-const updateDriveUI = () => {
-  const signedIn = isSignedIn();
-  gdriveConnectBtn.classList.toggle("connected", signedIn);
-  gdriveConnectLabel.textContent = signedIn ? "Drive Connected" : "Connect Drive";
-};
-
-onAuthChange(updateDriveUI);
-
-// Toolbar connect/disconnect button
-gdriveConnectBtn.addEventListener("click", async () => {
-  if (isSignedIn()) {
-    signOut();
-    updateDriveUI();
-    return;
-  }
-  try {
-    await ensureAuth();
-    updateDriveUI();
-  } catch (err) {
-    console.error("Google Drive sign-in failed:", err);
-    updateStatus(err.message || "Sign-in failed", "error");
-    setTimeout(setIdle, 3000);
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Custom Google Drive file picker
@@ -1054,7 +1025,6 @@ gdriveImportBtn.addEventListener("click", async () => {
   try {
     updateStatus("Connecting to Google Drive...");
     await ensureAuth();
-    updateDriveUI();
     setIdle();
 
     const selected = await openDrivePicker();
@@ -1080,7 +1050,6 @@ gdriveExportBtn.addEventListener("click", async () => {
     updateStatus("Uploading to Google Drive...");
     showProgress(50);
     const result = await uploadToDrive(lastCompiledBlob, lastCompiledFilename);
-    updateDriveUI();
     showProgress(100);
     setIdle("Saved to Google Drive!");
     if (result.webViewLink) {
@@ -1096,5 +1065,4 @@ gdriveExportBtn.addEventListener("click", async () => {
 });
 
 // Init
-updateDriveUI();
 goToStep("upload");
