@@ -24,6 +24,7 @@ export default [
         self: "readonly",
         clients: "readonly",
         navigator: "readonly",
+        localStorage: "readonly",
       },
     },
     rules: {

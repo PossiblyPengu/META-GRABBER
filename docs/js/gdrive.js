@@ -26,7 +26,6 @@ export const saveConfig = (clientId, apiKey) => {
   // Reset cached state so next operation re-initialises with new creds
   tokenClient = null;
   accessToken = null;
-  pickerInited = false;
 };
 
 export const isConfigured = () => {
@@ -41,7 +40,6 @@ let accessToken = null;
 let tokenClient = null;
 let gisLoaded = false;
 let gapiLoaded = false;
-let pickerInited = false;
 let authChangeCallback = null;
 
 /**
@@ -80,7 +78,6 @@ const ensureGAPI = async () => {
   await loadScript("https://apis.google.com/js/api.js");
   await new Promise((resolve) => window.gapi.load("picker", resolve));
   gapiLoaded = true;
-  pickerInited = true;
 };
 
 // ---------------------------------------------------------------------------
@@ -97,23 +94,19 @@ export const NEEDS_CONFIG = "NEEDS_CONFIG";
  * Throws with `error.code === NEEDS_CONFIG` when Client ID / API Key
  * have not been configured yet.
  */
-export const ensureAuth = () =>
-  new Promise(async (resolve, reject) => {
-    if (accessToken) {
-      resolve(accessToken);
-      return;
-    }
+export const ensureAuth = async () => {
+  if (accessToken) return accessToken;
 
-    if (!isConfigured()) {
-      const err = new Error("Google Drive is not configured yet.");
-      err.code = NEEDS_CONFIG;
-      reject(err);
-      return;
-    }
+  if (!isConfigured()) {
+    const err = new Error("Google Drive is not configured yet.");
+    err.code = NEEDS_CONFIG;
+    throw err;
+  }
 
-    const { clientId } = getConfig();
-    await ensureGIS();
+  const { clientId } = getConfig();
+  await ensureGIS();
 
+  return new Promise((resolve, reject) => {
     if (!tokenClient) {
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
@@ -124,7 +117,6 @@ export const ensureAuth = () =>
             return;
           }
           accessToken = resp.access_token;
-          // Auto-clear when it expires
           setTimeout(() => {
             accessToken = null;
             notifyAuthChange();
@@ -140,6 +132,7 @@ export const ensureAuth = () =>
 
     tokenClient.requestAccessToken();
   });
+};
 
 export const isSignedIn = () => !!accessToken;
 
