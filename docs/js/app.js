@@ -149,6 +149,24 @@ const parseTag = (file, resolve) => {
         const bytes = new Uint8Array(data);
         picture = new Blob([bytes], { type: format });
       }
+      const normalizeComment = (entry) => {
+        if (!entry) return null;
+        if (Array.isArray(entry)) {
+          for (const item of entry) {
+            const text = normalizeComment(item);
+            if (text) return text;
+          }
+          return null;
+        }
+        if (typeof entry === "string") return entry.trim();
+        if (typeof entry === "object") {
+          if (typeof entry.text === "string") return entry.text.trim();
+          if (typeof entry.description === "string") return entry.description.trim();
+          if (entry.data && typeof entry.data === "string") return entry.data.trim();
+        }
+        return null;
+      };
+      const comment = normalizeComment(t.comment) || normalizeComment(t.COMM) || normalizeComment(t.comments);
       resolve({
         title: t.title || null,
         artist: t.artist || null,
@@ -156,6 +174,7 @@ const parseTag = (file, resolve) => {
         year: t.year || null,
         track: t.track ? String(t.track) : null,
         genre: t.genre || null,
+        comment,
         picture,
       });
     },
@@ -202,6 +221,7 @@ const extractMetadata = async (file) => {
     year: id3?.year || null,
     track: id3?.track || null,
     genre: id3?.genre || null,
+    description: id3?.comment || null,
     picture: id3?.picture || null,
     duration: audioInfo.duration,
     bitrate: audioInfo.bitrate,
@@ -412,11 +432,20 @@ const addFiles = async (fileList) => {
   if (inferredBook.author && authorInput.value === "Unknown") {
     authorInput.value = inferredBook.author;
   }
+  if (
+    inferredBook.description &&
+    !descriptionInput.value.trim()
+  ) {
+    descriptionInput.value = inferredBook.description;
+  }
   for (const t of tracks) {
     if (!t.meta) continue;
     if (t.meta.year && !yearInput.value) yearInput.value = t.meta.year;
     if (t.meta.genre && genreInput.value === "Audiobook")
       genreInput.value = t.meta.genre;
+    if (!descriptionInput.value.trim() && t.meta.description) {
+      descriptionInput.value = t.meta.description;
+    }
     break;
   }
 

@@ -169,6 +169,15 @@ def _most_common(values: List[str]) -> str | None:
     return originals[best_key]
 
 
+def _select_description(values: List[str]) -> str | None:
+    """Pick the longest cleaned description from a list."""
+    cleaned = [v.strip() for v in values if v and v.strip()]
+    if not cleaned:
+        return None
+    cleaned.sort(key=len, reverse=True)
+    return cleaned[0]
+
+
 _FILENAME_PATTERNS = [
     # Author - Title - Chapter 01 / Author - Title - 01 - Name
     (re.compile(r"^(.+?)\s*[-–—]\s*(.+?)\s*[-–—]\s*(?:(?:ch(?:apter)?\.?\s*)?(\d+)\s*[-–—.]?\s*(.+?))?\.mp3$", re.I),
@@ -249,9 +258,11 @@ def _infer_book_info(
     fn_authors = [a for a, _, _ in parsed if a]
     id3_albums = [m.get("album") for m in metadata_list if m.get("album")]
     id3_artists = [m.get("artist") for m in metadata_list if m.get("artist")]
+    descriptions = [m.get("description") for m in metadata_list if m.get("description")]
     return {
         "title": _most_common(id3_albums) or _most_common(fn_titles),
         "author": _most_common(id3_artists) or _most_common(fn_authors),
+        "description": _select_description(descriptions),
     }
 
 
@@ -266,6 +277,7 @@ def _extract_metadata(file_path: Path) -> Dict[str, Any]:
         "album": None,
         "track": None,
         "year": None,
+        "description": None,
     }
     try:
         audio = MP3(file_path)
@@ -283,10 +295,28 @@ def _extract_metadata(file_path: Path) -> Dict[str, Any]:
         result["year"] = str(tags["TDRC"]) if "TDRC" in tags else None
         if "TRCK" in tags:
             result["track"] = str(tags["TRCK"])
+        comment = _extract_comment(tags)
+        if comment:
+            result["description"] = comment
     except ID3NoHeaderError:
         pass
 
     return result
+
+
+def _extract_comment(tags: ID3) -> str | None:
+    """Extract the first non-empty COMM frame text."""
+    try:
+        frames = tags.getall("COMM")
+    except Exception:
+        return None
+    for frame in frames:
+        texts = frame.text if isinstance(frame.text, list) else [frame.text]
+        for text in texts:
+            cleaned = str(text).strip()
+            if cleaned:
+                return cleaned
+    return None
 
 
 def _build_chapters_metadata(
