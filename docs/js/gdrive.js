@@ -6,20 +6,10 @@
  * selecting files, and Drive API v3 for downloading / uploading.
  */
 
-// Credentials loaded from config.js (gitignored).
-// If missing, Drive features are silently disabled.
-let GOOGLE_CLIENT_ID = "";
-let GOOGLE_API_KEY = "";
-
-try {
-  const config = await import("./config.js");
-  GOOGLE_CLIENT_ID = config.GOOGLE_CLIENT_ID || "";
-  GOOGLE_API_KEY = config.GOOGLE_API_KEY || "";
-} catch {
-  // config.js not found — Drive features disabled
-}
-
-export const isAvailable = () => GOOGLE_CLIENT_ID.length > 0 && GOOGLE_API_KEY.length > 0;
+// Client ID is public by design in OAuth2 client-side flows.
+// API Key is restricted by HTTP referrer and Picker API only in Google Cloud Console.
+const GOOGLE_CLIENT_ID = "306789600163-6hrqppjduqchesalvqp400rj78hbku8l.apps.googleusercontent.com";
+const GOOGLE_API_KEY = "AIzaSyCK8hy5iO4_XdQPCdlo2Tz-elPuO-tZqFM";
 
 // ---------------------------------------------------------------------------
 // Internal state

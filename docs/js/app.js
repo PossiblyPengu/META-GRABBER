@@ -3,7 +3,7 @@ import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, extractSortKey } from "./book-parser.js";
 import { searchBooks, fetchCoverBlob, fetchBookDetails } from "./book-lookup.js";
 import { extractMetadata } from "./metadata.js";
-import { isAvailable, isSignedIn, signOut, onAuthChange, pickFiles, uploadToDrive } from "./gdrive.js";
+import { isSignedIn, signOut, onAuthChange, pickFiles, uploadToDrive } from "./gdrive.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -961,9 +961,5 @@ gdriveExportBtn.addEventListener("click", async () => {
 });
 
 // Init
-if (!isAvailable()) {
-  gdriveConnectBtn.hidden = true;
-  gdriveImportBtn.hidden = true;
-}
 updateDriveUI();
 goToStep("upload");
