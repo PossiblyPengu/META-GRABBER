@@ -3,7 +3,7 @@ import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, extractSortKey } from "./book-parser.js";
 import { searchBooks, fetchCoverBlob, fetchBookDetails } from "./book-lookup.js";
 import { extractMetadata } from "./metadata.js";
-import { isSignedIn, signOut, onAuthChange, pickFiles, uploadToDrive } from "./gdrive.js";
+import { isSignedIn, signOut, onAuthChange, ensureAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -40,6 +40,15 @@ const gdriveImportBtn = $("gdrive-import-btn");
 const gdriveExportBtn = $("gdrive-export-btn");
 const gdriveConnectBtn = $("gdrive-connect-btn");
 const gdriveConnectLabel = $("gdrive-connect-label");
+
+// Custom Drive picker
+const gdrivePickerModal = $("gdrive-picker-modal");
+const gdrivePickerClose = $("gdrive-picker-close");
+const gdrivePickerCancel = $("gdrive-picker-cancel");
+const gdrivePickerSelect = $("gdrive-picker-select");
+const gdriveFileList = $("gdrive-file-list");
+const gdriveBreadcrumb = $("gdrive-breadcrumb");
+const gdriveSelectedCount = $("gdrive-selected-count");
 
 
 // Wizard panels & nav
@@ -907,9 +916,6 @@ gdriveConnectBtn.addEventListener("click", async () => {
     return;
   }
   try {
-    // pickFiles / uploadToDrive call ensureAuth internally,
-    // but the toolbar button lets users sign in explicitly
-    const { ensureAuth } = await import("./gdrive.js");
     await ensureAuth();
     updateDriveUI();
   } catch (err) {
@@ -920,13 +926,142 @@ gdriveConnectBtn.addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Custom Google Drive file picker
+// ---------------------------------------------------------------------------
+const pickerSelected = new Map(); // id → {id, name}
+let pickerResolve = null;
+let pickerBreadcrumbs = [{ id: "root", name: "My Drive" }];
+
+const openDrivePicker = () => new Promise((resolve) => {
+  pickerSelected.clear();
+  pickerBreadcrumbs = [{ id: "root", name: "My Drive" }];
+  pickerResolve = resolve;
+  gdrivePickerModal.hidden = false;
+  refreshPickerCount();
+  navigateToFolder("root");
+});
+
+const closeDrivePicker = (result) => {
+  gdrivePickerModal.hidden = true;
+  if (pickerResolve) {
+    pickerResolve(result || []);
+    pickerResolve = null;
+  }
+};
+
+const refreshPickerCount = () => {
+  const n = pickerSelected.size;
+  gdriveSelectedCount.textContent = `${n} file${n !== 1 ? "s" : ""} selected`;
+  gdrivePickerSelect.disabled = n === 0;
+};
+
+const renderBreadcrumbs = () => {
+  gdriveBreadcrumb.textContent = "";
+  pickerBreadcrumbs.forEach((crumb, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "gdrive-crumb-sep";
+      sep.textContent = "/";
+      gdriveBreadcrumb.appendChild(sep);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-ghost btn-xs gdrive-crumb";
+    btn.textContent = crumb.name;
+    btn.addEventListener("click", () => {
+      pickerBreadcrumbs = pickerBreadcrumbs.slice(0, i + 1);
+      navigateToFolder(crumb.id);
+    });
+    gdriveBreadcrumb.appendChild(btn);
+  });
+};
+
+const navigateToFolder = async (folderId) => {
+  gdriveFileList.innerHTML = '<div class="gdrive-picker-empty">Loading...</div>';
+  renderBreadcrumbs();
+
+  try {
+    const files = await listFolder(folderId);
+    gdriveFileList.textContent = "";
+
+    if (!files.length) {
+      gdriveFileList.innerHTML = '<div class="gdrive-picker-empty">No MP3 files or folders here</div>';
+      return;
+    }
+
+    for (const file of files) {
+      const isFolder = file.mimeType === "application/vnd.google-apps.folder";
+      const row = document.createElement("div");
+      row.className = "gdrive-file-row";
+
+      if (isFolder) {
+        row.innerHTML = `
+          <span class="gdrive-file-icon gdrive-folder-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span class="gdrive-file-name">${file.name}</span>
+        `;
+        row.addEventListener("click", () => {
+          pickerBreadcrumbs.push({ id: file.id, name: file.name });
+          navigateToFolder(file.id);
+        });
+      } else {
+        const checked = pickerSelected.has(file.id);
+        const size = file.size ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : "";
+        row.innerHTML = `
+          <label class="gdrive-file-check">
+            <input type="checkbox" ${checked ? "checked" : ""} />
+          </label>
+          <span class="gdrive-file-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </span>
+          <span class="gdrive-file-name">${file.name}</span>
+          <span class="gdrive-file-size">${size}</span>
+        `;
+        const checkbox = row.querySelector("input");
+        const toggleSelect = () => {
+          if (pickerSelected.has(file.id)) {
+            pickerSelected.delete(file.id);
+            checkbox.checked = false;
+          } else {
+            pickerSelected.set(file.id, { id: file.id, name: file.name });
+            checkbox.checked = true;
+          }
+          refreshPickerCount();
+        };
+        checkbox.addEventListener("change", toggleSelect);
+        row.addEventListener("click", (e) => {
+          if (e.target !== checkbox) toggleSelect();
+        });
+      }
+
+      gdriveFileList.appendChild(row);
+    }
+  } catch (err) {
+    gdriveFileList.innerHTML = `<div class="gdrive-picker-empty">Error: ${err.message}</div>`;
+  }
+};
+
+gdrivePickerClose.addEventListener("click", () => closeDrivePicker([]));
+gdrivePickerCancel.addEventListener("click", () => closeDrivePicker([]));
+gdrivePickerModal.addEventListener("click", (e) => { if (e.target === gdrivePickerModal) closeDrivePicker([]); });
+gdrivePickerSelect.addEventListener("click", () => closeDrivePicker([...pickerSelected.values()]));
+
+// ---------------------------------------------------------------------------
 // Google Drive import
 // ---------------------------------------------------------------------------
 gdriveImportBtn.addEventListener("click", async () => {
   try {
     updateStatus("Connecting to Google Drive...");
-    const files = await pickFiles();
+    await ensureAuth();
     updateDriveUI();
+    setIdle();
+
+    const selected = await openDrivePicker();
+    if (!selected.length) return;
+
+    updateStatus(`Downloading ${selected.length} file${selected.length > 1 ? "s" : ""}...`);
+    const files = await downloadFiles(selected);
     if (files.length) await addFiles(files);
     else setIdle();
   } catch (err) {

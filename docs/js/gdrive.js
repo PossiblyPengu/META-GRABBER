@@ -2,14 +2,12 @@
  * gdrive.js
  *
  * Google Drive integration for BookForge.
- * Handles OAuth2 (via Google Identity Services), the Google Picker for
- * selecting files, and Drive API v3 for downloading / uploading.
+ * Handles OAuth2 (via Google Identity Services) and Drive API v3
+ * for listing, downloading, and uploading files.
  */
 
 // Client ID is public by design in OAuth2 client-side flows.
-// API Key is restricted by HTTP referrer and Picker API only in Google Cloud Console.
 const GOOGLE_CLIENT_ID = "306789600163-6hrqppjduqchesalvqp400rj78hbku8l.apps.googleusercontent.com";
-const GOOGLE_API_KEY = "AIzaSyCRyWZvo0VbiUQpzbYRqbN2o7Katf3PuvQ";
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -17,7 +15,6 @@ const GOOGLE_API_KEY = "AIzaSyCRyWZvo0VbiUQpzbYRqbN2o7Katf3PuvQ";
 let accessToken = null;
 let tokenClient = null;
 let gisLoaded = false;
-let gapiLoaded = false;
 let authChangeCallback = null;
 
 /**
@@ -29,7 +26,7 @@ export const onAuthChange = (cb) => { authChangeCallback = cb; };
 const notifyAuthChange = () => { authChangeCallback?.(!!accessToken); };
 
 // ---------------------------------------------------------------------------
-// Script loaders (dynamic, like metadata.js loads jsmediatags)
+// Script loader
 // ---------------------------------------------------------------------------
 const loadScript = (src) =>
   new Promise((resolve, reject) => {
@@ -51,21 +48,9 @@ const ensureGIS = async () => {
   gisLoaded = true;
 };
 
-const ensureGAPI = async () => {
-  if (gapiLoaded) return;
-  await loadScript("https://apis.google.com/js/api.js");
-  await new Promise((resolve) => window.gapi.load("picker", resolve));
-  gapiLoaded = true;
-};
-
 // ---------------------------------------------------------------------------
 // Auth — Google Identity Services token model (implicit flow)
 // ---------------------------------------------------------------------------
-
-/**
- * Ensure we have a valid access token. Prompts the user to sign in if
- * no token exists. Returns the token string.
- */
 export const ensureAuth = async () => {
   if (accessToken) return accessToken;
 
@@ -110,83 +95,72 @@ export const signOut = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Import — Google Picker → Drive API download
+// Drive API — List files in a folder
+// ---------------------------------------------------------------------------
+const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+
+/**
+ * List files in a Drive folder.
+ * Returns folders first, then audio files, sorted by name.
+ *
+ * @param {string} folderId - "root" for My Drive top level
+ * @returns {Promise<Array<{id, name, mimeType, size}>>}
+ */
+export const listFolder = async (folderId = "root") => {
+  const token = await ensureAuth();
+  const q = `'${folderId}' in parents and trashed = false and (mimeType = 'application/vnd.google-apps.folder' or mimeType = 'audio/mpeg')`;
+  const fields = "files(id,name,mimeType,size)";
+  const orderBy = "folder,name";
+  const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=${encodeURIComponent(orderBy)}&pageSize=200`;
+
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Drive list failed (${resp.status}): ${text}`);
+  }
+
+  const data = await resp.json();
+  return data.files || [];
+};
+
+// ---------------------------------------------------------------------------
+// Drive API — Download files
 // ---------------------------------------------------------------------------
 
 /**
- * Open the Google Picker filtered to audio files, download the selected
- * files via the Drive API, and return them as File objects.
- *
+ * Download Drive files by ID and return them as File objects.
+ * @param {Array<{id, name}>} items
  * @returns {Promise<File[]>}
  */
-export const pickFiles = async () => {
+export const downloadFiles = async (items) => {
   const token = await ensureAuth();
-
-  await ensureGAPI();
-
-  return new Promise((resolve, reject) => {
-    const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-      .setMimeTypes("audio/mpeg")
-      .setMode(window.google.picker.DocsViewMode.LIST);
-
-    const picker = new window.google.picker.PickerBuilder()
-      .addView(view)
-      .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-      .setAppId("306789600163")
-      .setOAuthToken(token)
-      .setDeveloperKey(GOOGLE_API_KEY)
-      .setTitle("Select MP3 files")
-      .setSize(900, 550)
-      .setCallback(async (data) => {
-        if (data.action === window.google.picker.Action.CANCEL) {
-          resolve([]);
-          return;
-        }
-        if (data.action !== window.google.picker.Action.PICKED) return;
-
-        try {
-          const files = await downloadPickedFiles(data.docs, token);
-          resolve(files);
-        } catch (err) {
-          reject(err);
-        }
-      })
-      .build();
-
-    picker.setVisible(true);
-  });
-};
-
-/**
- * Download an array of Picker doc metadata into File objects.
- */
-const downloadPickedFiles = async (docs, token) => {
   const files = [];
-  for (const doc of docs) {
+  for (const item of items) {
     const resp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`,
+      `${DRIVE_FILES_URL}/${item.id}?alt=media`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!resp.ok) {
-      console.warn(`Failed to download ${doc.name}: ${resp.status}`);
+      console.warn(`Failed to download ${item.name}: ${resp.status}`);
       continue;
     }
     const blob = await resp.blob();
-    const file = new File([blob], doc.name, { type: "audio/mpeg" });
-    files.push(file);
+    files.push(new File([blob], item.name, { type: "audio/mpeg" }));
   }
   return files;
 };
 
 // ---------------------------------------------------------------------------
-// Export — Upload to Google Drive (multipart)
+// Drive API — Upload (multipart)
 // ---------------------------------------------------------------------------
 
 /**
- * Upload a Blob to Google Drive using a multipart request.
- *
- * @param {Blob} blob  - The file content
- * @param {string} filename - Desired filename on Drive
+ * Upload a Blob to Google Drive.
+ * @param {Blob} blob
+ * @param {string} filename
  * @returns {Promise<{id: string, webViewLink: string}>}
  */
 export const uploadToDrive = async (blob, filename) => {
@@ -197,21 +171,17 @@ export const uploadToDrive = async (blob, filename) => {
     mimeType: blob.type || "audio/x-m4b",
   };
 
-  // Build multipart body
   const boundary = "bookforge_boundary_" + Date.now();
   const metaPart =
     `--${boundary}\r\n` +
     "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
     JSON.stringify(metadata) +
     "\r\n";
-
-  const closePart = `\r\n--${boundary}--`;
-
   const mediaPart =
     `--${boundary}\r\n` +
     `Content-Type: ${blob.type || "audio/x-m4b"}\r\n\r\n`;
+  const closePart = `\r\n--${boundary}--`;
 
-  // Assemble as a single Blob for streaming
   const body = new Blob([metaPart, mediaPart, blob, closePart]);
 
   const resp = await fetch(
