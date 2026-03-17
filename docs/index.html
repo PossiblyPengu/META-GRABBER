@@ -308,7 +308,10 @@
         <div class="gdrive-picker-list" id="gdrive-file-list">
           <div class="gdrive-picker-empty">Loading...</div>
         </div>
-        <div class="modal-footer">
+        <div class="gdrive-download-progress" id="gdrive-download-progress" hidden>
+          <div class="gdrive-download-list" id="gdrive-download-list"></div>
+        </div>
+        <div class="modal-footer" id="gdrive-picker-footer">
           <label class="gdrive-select-all"><input type="checkbox" id="gdrive-select-all" /> Select all</label>
           <span class="gdrive-picker-count" id="gdrive-selected-count">0 files selected</span>
           <button type="button" class="btn btn-ghost" id="gdrive-picker-cancel">Cancel</button>

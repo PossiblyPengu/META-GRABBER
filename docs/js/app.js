@@ -48,6 +48,10 @@ const gdriveFileList = $("gdrive-file-list");
 const gdriveBreadcrumb = $("gdrive-breadcrumb");
 const gdriveSelectedCount = $("gdrive-selected-count");
 const gdriveSelectAll = $("gdrive-select-all");
+const gdriveSelectAllLabel = gdriveSelectAll.closest("label");
+const gdrivePickerFooter = $("gdrive-picker-footer");
+const gdriveDownloadProgress = $("gdrive-download-progress");
+const gdriveDownloadList = $("gdrive-download-list");
 
 
 // Wizard panels & nav
@@ -952,6 +956,7 @@ const renderBreadcrumbs = () => {
 const navigateToFolder = async (folderId) => {
   gdriveFileList.innerHTML = '<div class="gdrive-picker-empty">Loading...</div>';
   gdriveSelectAll.checked = false;
+  gdriveSelectAllLabel.hidden = true;
   pickerCurrentFiles = [];
   renderBreadcrumbs();
 
@@ -964,6 +969,8 @@ const navigateToFolder = async (folderId) => {
       gdriveFileList.innerHTML = '<div class="gdrive-picker-empty">No MP3 files or folders here</div>';
       return;
     }
+
+    gdriveSelectAllLabel.hidden = pickerCurrentFiles.length === 0;
 
     for (const file of files) {
       const isFolder = file.mimeType === "application/vnd.google-apps.folder";
@@ -1034,8 +1041,57 @@ gdriveSelectAll.addEventListener("change", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Google Drive import
+// Google Drive import — download progress UI
 // ---------------------------------------------------------------------------
+const formatBytes = (bytes) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const showDownloadProgress = (items) => {
+  // Hide file list & footer, show download progress
+  gdriveFileList.hidden = true;
+  gdriveBreadcrumb.hidden = true;
+  gdrivePickerFooter.hidden = true;
+  gdriveDownloadProgress.hidden = false;
+  gdriveDownloadList.textContent = "";
+
+  const rows = [];
+  for (let i = 0; i < items.length; i++) {
+    const row = document.createElement("div");
+    row.className = "gdrive-dl-item";
+
+    const info = document.createElement("div");
+    info.className = "gdrive-dl-info";
+    const name = document.createElement("span");
+    name.className = "gdrive-dl-name";
+    name.textContent = items[i].name;
+    const size = document.createElement("span");
+    size.className = "gdrive-dl-size";
+    size.textContent = "Waiting...";
+    info.append(name, size);
+
+    const bar = document.createElement("div");
+    bar.className = "gdrive-dl-bar";
+    const fill = document.createElement("div");
+    fill.className = "gdrive-dl-fill";
+    bar.appendChild(fill);
+
+    row.append(info, bar);
+    gdriveDownloadList.appendChild(row);
+    rows.push({ row, fill, size });
+  }
+  return rows;
+};
+
+const hideDownloadProgress = () => {
+  gdriveDownloadProgress.hidden = true;
+  gdriveFileList.hidden = false;
+  gdriveBreadcrumb.hidden = false;
+  gdrivePickerFooter.hidden = false;
+};
+
 gdriveImportBtn.addEventListener("click", async () => {
   try {
     updateStatus("Connecting to Google Drive...");
@@ -1045,12 +1101,39 @@ gdriveImportBtn.addEventListener("click", async () => {
     const selected = await openDrivePicker();
     if (!selected.length) return;
 
+    // Switch modal to download progress view
+    const progressRows = showDownloadProgress(selected);
+
+    // Re-show modal (picker closed it)
+    gdrivePickerModal.hidden = false;
+
     updateStatus(`Downloading ${selected.length} file${selected.length > 1 ? "s" : ""}...`);
-    const files = await downloadFiles(selected);
+
+    const files = await downloadFiles(selected, (index, _name, loaded, total, done) => {
+      const pr = progressRows[index];
+      if (!pr) return;
+      if (total > 0) {
+        const pct = Math.min(100, (loaded / total) * 100);
+        pr.fill.style.width = `${pct}%`;
+        pr.size.textContent = done ? formatBytes(total) : `${formatBytes(loaded)} / ${formatBytes(total)}`;
+      } else if (done) {
+        pr.fill.style.width = "100%";
+        pr.size.textContent = loaded > 0 ? formatBytes(loaded) : "Failed";
+      }
+      if (done) pr.row.classList.add("done");
+    });
+
+    // Brief pause so user sees 100% state
+    await new Promise((r) => setTimeout(r, 600));
+    gdrivePickerModal.hidden = true;
+    hideDownloadProgress();
+
     if (files.length) await addFiles(files);
     else setIdle();
   } catch (err) {
     console.error("Google Drive import failed:", err);
+    gdrivePickerModal.hidden = true;
+    hideDownloadProgress();
     updateStatus(err.message || "Google Drive import failed", "error");
     setTimeout(setIdle, 3000);
   }

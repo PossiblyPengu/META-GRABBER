@@ -133,22 +133,45 @@ export const listFolder = async (folderId = "root") => {
 /**
  * Download Drive files by ID and return them as File objects.
  * @param {Array<{id, name}>} items
+ * @param {(index: number, name: string, loaded: number, total: number, done: boolean) => void} [onProgress]
  * @returns {Promise<File[]>}
  */
-export const downloadFiles = async (items) => {
+export const downloadFiles = async (items, onProgress) => {
   const token = await ensureAuth();
   const files = [];
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     const resp = await fetch(
       `${DRIVE_FILES_URL}/${item.id}?alt=media`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!resp.ok) {
       console.warn(`Failed to download ${item.name}: ${resp.status}`);
+      onProgress?.(i, item.name, 0, 0, true);
       continue;
     }
-    const blob = await resp.blob();
-    files.push(new File([blob], item.name, { type: "audio/mpeg" }));
+    const total = parseInt(resp.headers.get("Content-Length") || "0", 10);
+    if (onProgress && resp.body && total > 0) {
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      onProgress(i, item.name, 0, total, false);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        onProgress(i, item.name, loaded, total, false);
+      }
+      const blob = new Blob(chunks, { type: "audio/mpeg" });
+      files.push(new File([blob], item.name, { type: "audio/mpeg" }));
+      onProgress(i, item.name, total, total, true);
+    } else {
+      onProgress?.(i, item.name, 0, 0, false);
+      const blob = await resp.blob();
+      files.push(new File([blob], item.name, { type: "audio/mpeg" }));
+      onProgress?.(i, item.name, blob.size, blob.size, true);
+    }
   }
   return files;
 };
