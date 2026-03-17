@@ -3,6 +3,7 @@ import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 import { inferBook, extractSortKey } from "./book-parser.js";
 import { searchBooks, fetchCoverBlob, fetchBookDetails } from "./book-lookup.js";
 import { extractMetadata } from "./metadata.js";
+import { getConfig, saveConfig, isConfigured, pickFiles, uploadToDrive, ensureAuth } from "./gdrive.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -30,8 +31,22 @@ const coverRemoveBtn = $("cover-remove-btn");
 const lookupQuery = $("lookup-query");
 const lookupBtn = $("lookup-btn");
 const matchResultsGrid = $("match-results-grid");
+const coverResultsStrip = $("cover-results-strip");
 const uploadStatus = $("upload-status");
 const uploadStatusText = $("upload-status-text");
+
+// Google Drive
+const gdriveImportBtn = $("gdrive-import-btn");
+const gdriveExportBtn = $("gdrive-export-btn");
+
+// Settings modal
+const settingsModal = $("settings-modal");
+const settingsBtn = $("settings-btn");
+const settingsClose = $("settings-close");
+const settingsCancel = $("settings-cancel");
+const settingsSave = $("settings-save");
+const settingsClientId = $("settings-client-id");
+const settingsApiKey = $("settings-api-key");
 
 // Wizard panels & nav
 const panels = {
@@ -71,6 +86,8 @@ let inferredBook = null;
 let coverFile = null;
 let coverObjectURL = null;
 let lookupDebounceTimer = null;
+let lastCompiledBlob = null;
+let lastCompiledFilename = null;
 
 // ---------------------------------------------------------------------------
 // Wizard navigation
@@ -442,6 +459,7 @@ const addFiles = async (fileList) => {
     performLookup(searchQ);
   } else {
     matchResultsGrid.textContent = "";
+    coverResultsStrip.textContent = "";
     const empty = document.createElement("div");
     empty.className = "match-empty";
     empty.textContent = "Could not auto-detect book info. Try searching manually above.";
@@ -470,49 +488,31 @@ const removeTrack = (index) => {
 // ---------------------------------------------------------------------------
 // Book lookup (step 2)
 // ---------------------------------------------------------------------------
+let lastLookupResults = [];
+
 const performLookup = async (query) => {
   if (!query || query.trim().length < 2) return;
 
   matchResultsGrid.textContent = "";
+  coverResultsStrip.textContent = "";
   const spinner = document.createElement("div");
   spinner.className = "match-spinner";
   spinner.textContent = "Searching Google Books & Open Library...";
   matchResultsGrid.appendChild(spinner);
 
   const results = await searchBooks(query, 6);
+  lastLookupResults = results;
 
   if (!results.length) {
     spinner.textContent = "No results found. Try a different search.";
     return;
   }
 
+  // --- Metadata cards ---
   matchResultsGrid.textContent = "";
   for (const result of results) {
     const card = document.createElement("div");
     card.className = "match-card";
-
-    if (result.coverUrl) {
-      const img = document.createElement("img");
-      img.className = "match-card-img";
-      img.crossOrigin = "anonymous";
-      img.referrerPolicy = "no-referrer";
-      img.alt = result.title;
-      img.loading = "lazy";
-      img.addEventListener("error", () => {
-        img.remove();
-        const fb = document.createElement("div");
-        fb.className = "no-cover";
-        fb.textContent = "No cover";
-        card.prepend(fb);
-      });
-      img.src = result.coverUrl;
-      card.appendChild(img);
-    } else {
-      const nc = document.createElement("div");
-      nc.className = "no-cover";
-      nc.textContent = "No cover";
-      card.appendChild(nc);
-    }
 
     const titleEl = document.createElement("div");
     titleEl.className = "match-card-title";
@@ -524,6 +524,13 @@ const performLookup = async (query) => {
       authorEl.className = "match-card-author";
       authorEl.textContent = result.author;
       card.appendChild(authorEl);
+    }
+
+    if (result.year) {
+      const yearEl = document.createElement("span");
+      yearEl.className = "match-card-year";
+      yearEl.textContent = result.year;
+      card.appendChild(yearEl);
     }
 
     if (result.description) {
@@ -538,12 +545,54 @@ const performLookup = async (query) => {
     sourceEl.textContent = result.source === "google" ? "Google Books" : "Open Library";
     card.appendChild(sourceEl);
 
-    card.addEventListener("click", () => applyLookupResult(result));
+    card.addEventListener("click", () => {
+      // Highlight selected metadata card
+      matchResultsGrid.querySelectorAll(".match-card").forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
+      applyMetadata(result);
+    });
     matchResultsGrid.appendChild(card);
+  }
+
+  // --- Cover thumbnails ---
+  coverResultsStrip.textContent = "";
+  const coverResults = results.filter((r) => r.coverUrl);
+  if (!coverResults.length) {
+    const empty = document.createElement("div");
+    empty.className = "cover-strip-empty";
+    empty.textContent = "No covers available from search results. You can upload one in the Edit step.";
+    coverResultsStrip.appendChild(empty);
+    return;
+  }
+
+  for (const result of coverResults) {
+    const thumb = document.createElement("div");
+    thumb.className = "cover-thumb";
+
+    const img = document.createElement("img");
+    img.crossOrigin = "anonymous";
+    img.referrerPolicy = "no-referrer";
+    img.alt = result.title;
+    img.loading = "lazy";
+    img.addEventListener("error", () => { thumb.remove(); });
+    img.src = result.coverUrl;
+    thumb.appendChild(img);
+
+    const label = document.createElement("div");
+    label.className = "cover-thumb-label";
+    label.textContent = result.source === "google" ? "Google" : "Open Library";
+    thumb.appendChild(label);
+
+    thumb.addEventListener("click", () => {
+      coverResultsStrip.querySelectorAll(".cover-thumb").forEach((c) => c.classList.remove("selected"));
+      thumb.classList.add("selected");
+      applyCover(result);
+    });
+    coverResultsStrip.appendChild(thumb);
   }
 };
 
-const applyLookupResult = async (result) => {
+const applyMetadata = async (result) => {
   // Fill metadata immediately from search result
   if (result.title) titleInput.value = result.title;
   if (result.author) authorInput.value = result.author;
@@ -551,21 +600,12 @@ const applyLookupResult = async (result) => {
   if (result.genre) genreInput.value = result.genre;
   if (result.description) descriptionInput.value = result.description;
 
-  // Advance to edit step right away for responsiveness
-  goToStep("edit");
   updateStatus("Fetching book details...");
 
   // Fetch deeper details in background
   const { description, chapters, narrator } = await fetchBookDetails(result);
   if (description && !descriptionInput.value.trim()) descriptionInput.value = description;
   if (narrator && !narratorInput.value.trim()) narratorInput.value = narrator;
-
-  // Cover
-  if (result.coverUrl) {
-    updateStatus("Fetching cover...");
-    const blob = await fetchCoverBlob(result.coverUrl);
-    if (blob && blob.size > 0) setCover(blob);
-  }
 
   // Apply chapter names from API
   if (tracks.length && chapters?.length) {
@@ -576,6 +616,14 @@ const applyLookupResult = async (result) => {
   }
 
   setIdle("Metadata loaded");
+};
+
+const applyCover = async (result) => {
+  if (!result.coverUrl) return;
+  updateStatus("Fetching cover...");
+  const blob = await fetchCoverBlob(result.coverUrl);
+  if (blob && blob.size > 0) setCover(blob);
+  setIdle("Cover loaded");
 };
 
 // ---------------------------------------------------------------------------
@@ -735,6 +783,11 @@ const compileM4B = async () => {
   anchor.remove();
   URL.revokeObjectURL(url);
 
+  // Retain for Google Drive export
+  lastCompiledBlob = blob;
+  lastCompiledFilename = `${slug}.m4b`;
+  if (isConfigured()) gdriveExportBtn.hidden = false;
+
   showProgress(100);
   setIdle("Complete!");
   setTimeout(hideProgress, 1500);
@@ -819,6 +872,7 @@ fileInput.addEventListener("change", (e) => {
 // Wizard navigation buttons
 $("match-back-btn").addEventListener("click", () => goToStep("upload"));
 $("match-skip-btn").addEventListener("click", () => goToStep("edit"));
+$("match-next-btn").addEventListener("click", () => goToStep("edit"));
 $("edit-back-btn").addEventListener("click", () => goToStep("match"));
 $("edit-next-btn").addEventListener("click", () => goToStep("forge"));
 $("forge-back-btn").addEventListener("click", () => goToStep("edit"));
@@ -840,5 +894,74 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Settings modal
+// ---------------------------------------------------------------------------
+const openSettings = () => {
+  const cfg = getConfig();
+  settingsClientId.value = cfg.clientId;
+  settingsApiKey.value = cfg.apiKey;
+  settingsModal.hidden = false;
+};
+
+const closeSettings = () => { settingsModal.hidden = true; };
+
+settingsBtn.addEventListener("click", openSettings);
+settingsClose.addEventListener("click", closeSettings);
+settingsCancel.addEventListener("click", closeSettings);
+settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) closeSettings(); });
+
+settingsSave.addEventListener("click", () => {
+  saveConfig(settingsClientId.value, settingsApiKey.value);
+  closeSettings();
+  refreshGDriveButtons();
+});
+
+const refreshGDriveButtons = () => {
+  const configured = isConfigured();
+  gdriveImportBtn.disabled = !configured;
+  gdriveImportBtn.title = configured ? "Import MP3 files from Google Drive" : "Configure Google Drive in Settings";
+};
+
+// ---------------------------------------------------------------------------
+// Google Drive import
+// ---------------------------------------------------------------------------
+gdriveImportBtn.addEventListener("click", async () => {
+  try {
+    updateStatus("Opening Google Drive...");
+    const files = await pickFiles();
+    if (files.length) await addFiles(files);
+    else setIdle();
+  } catch (err) {
+    console.error("Google Drive import failed:", err);
+    updateStatus(err.message || "Google Drive import failed", "error");
+    setTimeout(setIdle, 3000);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Google Drive export
+// ---------------------------------------------------------------------------
+gdriveExportBtn.addEventListener("click", async () => {
+  if (!lastCompiledBlob || !lastCompiledFilename) return;
+  try {
+    updateStatus("Uploading to Google Drive...");
+    showProgress(50);
+    const result = await uploadToDrive(lastCompiledBlob, lastCompiledFilename);
+    showProgress(100);
+    setIdle("Saved to Google Drive!");
+    if (result.webViewLink) {
+      window.open(result.webViewLink, "_blank", "noopener");
+    }
+    setTimeout(hideProgress, 1500);
+  } catch (err) {
+    console.error("Google Drive export failed:", err);
+    hideProgress();
+    updateStatus(err.message || "Google Drive upload failed", "error");
+    setTimeout(setIdle, 3000);
+  }
+});
+
 // Init
+refreshGDriveButtons();
 goToStep("upload");

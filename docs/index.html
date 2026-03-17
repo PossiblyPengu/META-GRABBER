@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdnjs.cloudflare.com blob:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: data: https://covers.openlibrary.org https://books.google.com https://www.googleapis.com; connect-src 'self' https://esm.sh https://unpkg.com https://www.googleapis.com https://openlibrary.org https://covers.openlibrary.org blob:; worker-src blob:;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdnjs.cloudflare.com https://accounts.google.com https://apis.google.com blob:; style-src 'self' https://fonts.googleapis.com https://accounts.google.com; font-src https://fonts.gstatic.com; img-src 'self' blob: data: https://covers.openlibrary.org https://books.google.com https://www.googleapis.com; connect-src 'self' https://esm.sh https://unpkg.com https://www.googleapis.com https://accounts.google.com https://content.googleapis.com https://openlibrary.org https://covers.openlibrary.org blob:; frame-src https://docs.google.com https://accounts.google.com; worker-src blob:;" />
     <title>M4B Foundry</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,6 +25,13 @@
             <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
           </svg>
           <span class="logo-text">M4B Foundry</span>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" id="settings-btn" class="btn btn-icon" title="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
         <div class="toolbar-status" id="toolbar-status">
           <span class="status-dot" id="status-dot"></span>
@@ -95,6 +102,20 @@
               <p class="drop-sub">or click to browse — chapters auto-sort by number</p>
             </div>
           </div>
+          <div class="upload-alt-actions">
+            <span class="upload-alt-divider">or</span>
+            <button type="button" id="gdrive-import-btn" class="btn btn-ghost btn-gdrive" disabled title="Configure Google Drive in Settings">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.433 22l-1.6-2.7 6.8-11.8 1.6 2.7z" fill="#0066da"/>
+                <path d="M20.167 22H7.033l1.6-2.7h10.134z" fill="#00ac47"/>
+                <path d="M23.767 15.3L17 3.5h-3.2l6.8 11.8z" fill="#ea4335"/>
+                <path d="M8.633 10.2L5.033 3.5H1.833l3.6 6.2z" fill="#00832d"/>
+                <path d="M17 3.5l3.6 6.2-6.8 11.8-3.6-6.2z" fill="#2684fc"/>
+                <path d="M8.633 10.2l1.6 2.7-1.6 2.8H5.433l-1-1.7z" fill="#ffba00"/>
+              </svg>
+              Import from Google Drive
+            </button>
+          </div>
           <div class="upload-status" id="upload-status" hidden>
             <div class="upload-spinner"></div>
             <p class="upload-status-text" id="upload-status-text">Reading metadata...</p>
@@ -107,7 +128,7 @@
         <section class="wizard-panel" id="panel-match">
           <div class="match-header">
             <h2>Find your book</h2>
-            <p>We auto-searched based on your files. Pick a match to fill in metadata, cover, and chapters — or skip to do it manually.</p>
+            <p>Pick metadata and cover art independently — they don't have to come from the same source.</p>
           </div>
           <div class="match-search-bar">
             <div class="lookup-input-wrap">
@@ -119,11 +140,26 @@
             <button type="button" id="lookup-btn" class="btn btn-accent">Search</button>
           </div>
           <div class="match-results" id="match-results">
-            <div class="match-results-grid" id="match-results-grid"></div>
+            <div class="match-section">
+              <h3 class="match-section-title">Metadata</h3>
+              <p class="match-section-sub">Pick a source for title, author, and description</p>
+              <div class="match-results-grid" id="match-results-grid"></div>
+            </div>
+            <div class="match-section">
+              <h3 class="match-section-title">Cover Art</h3>
+              <p class="match-section-sub">Pick a cover — or skip and upload your own later</p>
+              <div class="cover-results-strip" id="cover-results-strip"></div>
+            </div>
           </div>
           <div class="wizard-actions">
             <button type="button" class="btn btn-ghost" id="match-back-btn">Back</button>
-            <button type="button" class="btn btn-ghost" id="match-skip-btn">Skip — I'll fill it in myself</button>
+            <div class="wizard-actions-right">
+              <button type="button" class="btn btn-ghost" id="match-skip-btn">Skip — I'll fill it in myself</button>
+              <button type="button" class="btn btn-primary" id="match-next-btn">
+                Continue to Edit
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
           </div>
         </section>
 
@@ -238,18 +274,64 @@
           </div>
           <div class="wizard-actions forge-actions">
             <button type="button" class="btn btn-ghost" id="forge-back-btn">Back to edit</button>
-            <button type="submit" class="btn btn-primary btn-lg" id="compile-button">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-              </svg>
-              Forge M4B
-            </button>
+            <div class="forge-actions-right">
+              <button type="button" id="gdrive-export-btn" class="btn btn-ghost btn-gdrive" hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4.433 22l-1.6-2.7 6.8-11.8 1.6 2.7z" fill="#0066da"/>
+                  <path d="M20.167 22H7.033l1.6-2.7h10.134z" fill="#00ac47"/>
+                  <path d="M23.767 15.3L17 3.5h-3.2l6.8 11.8z" fill="#ea4335"/>
+                  <path d="M8.633 10.2L5.033 3.5H1.833l3.6 6.2z" fill="#00832d"/>
+                  <path d="M17 3.5l3.6 6.2-6.8 11.8-3.6-6.2z" fill="#2684fc"/>
+                  <path d="M8.633 10.2l1.6 2.7-1.6 2.8H5.433l-1-1.7z" fill="#ffba00"/>
+                </svg>
+                Save to Google Drive
+              </button>
+              <button type="submit" class="btn btn-primary btn-lg" id="compile-button">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+                Forge M4B
+              </button>
+            </div>
           </div>
           <div class="footer-note">
             Everything runs locally in your browser. First compile downloads ~31&nbsp;MB of FFmpeg WASM.
           </div>
         </section>
       </form>
+    </div>
+
+    <!-- Settings modal -->
+    <div class="modal-overlay" id="settings-modal" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button type="button" class="btn btn-icon" id="settings-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h3>Google Drive</h3>
+            <p class="settings-help">
+              To import/export files with Google Drive you need a
+              <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud</a>
+              project with the <strong>Drive API</strong> and <strong>Picker API</strong> enabled.
+              Create an <em>OAuth Client ID</em> (Web) and an <em>API Key</em>, then paste them below.
+            </p>
+            <label class="field">
+              <span class="field-label">OAuth Client ID</span>
+              <input type="text" id="settings-client-id" placeholder="xxxx.apps.googleusercontent.com" />
+            </label>
+            <label class="field">
+              <span class="field-label">API Key</span>
+              <input type="text" id="settings-api-key" placeholder="AIza..." />
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="settings-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="settings-save">Save</button>
+        </div>
+      </div>
     </div>
 
     <script src="js/app.js" type="module"></script>

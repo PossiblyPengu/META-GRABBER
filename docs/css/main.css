@@ -352,16 +352,16 @@ form {
 
 .match-results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
 }
 
-/* Match cards — larger, richer than before */
+/* Match cards — metadata-only, no cover images */
 .match-card {
   cursor: pointer;
   border: 2px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 0.6rem;
+  padding: 0.75rem;
   background: var(--bg-raised);
   transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
@@ -370,26 +370,6 @@ form {
   border-color: var(--accent);
   transform: translateY(-3px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-}
-
-.match-card-img {
-  width: 100%;
-  aspect-ratio: 2/3;
-  object-fit: cover;
-  border-radius: var(--radius-xs);
-  background: var(--bg-inset);
-}
-
-.match-card .no-cover {
-  width: 100%;
-  aspect-ratio: 2/3;
-  border-radius: var(--radius-xs);
-  background: var(--bg-inset);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 0.75rem;
 }
 
 .match-card-title {
@@ -430,6 +410,88 @@ form {
   letter-spacing: 0.05em;
 }
 
+.match-section {
+  margin-top: 0.5rem;
+}
+
+.match-section-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.match-section-sub {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.match-card.selected {
+  border-color: var(--accent);
+  background: rgba(79, 142, 255, 0.08);
+}
+
+.match-card-year {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Cover thumbnail strip */
+.cover-results-strip {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.cover-thumb {
+  flex-shrink: 0;
+  width: 100px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-raised);
+  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.cover-thumb:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.cover-thumb.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.cover-thumb img {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-thumb-label {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cover-strip-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 1rem 0;
+}
+
 .match-spinner {
   text-align: center;
   padding: 2.5rem;
@@ -442,6 +504,12 @@ form {
   padding: 2rem;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.wizard-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 /* ==================================================================
@@ -1000,7 +1068,7 @@ textarea {
     gap: 0.75rem;
   }
   .match-results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
   .forge-review {
     flex-direction: column;
@@ -1030,7 +1098,7 @@ textarea {
   .forge-review { padding: 1rem; gap: 1rem; }
   .forge-cover { width: 140px; min-height: 140px; }
   .match-search-bar { flex-direction: column; }
-  .match-results-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .match-results-grid { grid-template-columns: 1fr; }
 }
 
 /* ---- Scrollbar ---- */
@@ -1038,6 +1106,116 @@ textarea {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+/* ==================================================================
+   SETTINGS MODAL
+   ================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+
+.modal-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(480px, calc(100vw - 2rem));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.settings-help {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.settings-help a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.settings-help a:hover {
+  text-decoration: underline;
+}
+
+/* ==================================================================
+   GOOGLE DRIVE BUTTONS
+   ================================================================== */
+.btn-gdrive {
+  gap: 0.5rem;
+}
+
+.btn-gdrive:disabled {
+  opacity: 0.35;
+}
+
+.upload-alt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.upload-alt-divider {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.forge-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
 
 /* ---- Selection ---- */
 ::selection {
