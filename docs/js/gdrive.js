@@ -132,6 +132,7 @@ export const pickFiles = async () => {
     const picker = new window.google.picker.PickerBuilder()
       .addView(view)
       .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
+      .setAppId("306789600163")
       .setOAuthToken(token)
       .setDeveloperKey(GOOGLE_API_KEY)
       .setTitle("Select MP3 files")
