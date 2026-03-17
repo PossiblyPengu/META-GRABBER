@@ -20,6 +20,10 @@ const statusDot = document.getElementById("status-dot");
 const statusText = document.getElementById("status-text");
 const progressTrack = document.getElementById("progress-track");
 const progressFill = document.getElementById("progress-fill");
+const progressDialog = document.getElementById("progress-dialog");
+const progressList = document.getElementById("progress-list");
+const progressDismiss = document.getElementById("progress-dismiss");
+const progressDialogTitle = document.getElementById("progress-dialog-title");
 const titleInput = form.elements.namedItem("title");
 const authorInput = form.elements.namedItem("author");
 const yearInput = form.elements.namedItem("year");
@@ -43,6 +47,7 @@ const defaultCompileSummary = "Drop MP3 chapters to prep your forge.";
 let tracks = []; // { file, meta, chapterName }
 let ffmpeg = null;
 let ffmpegReady = false;
+let ffmpegLoadingPromise = null;
 let inferredBook = null;
 let coverFile = null;
 let coverObjectURL = null;
@@ -53,11 +58,19 @@ let coverObjectURL = null;
 const updateStatus = (label, state = "busy") => {
   statusText.textContent = label;
   statusDot.className = "status-dot" + (state === "idle" ? "" : state === "error" ? " error" : " busy");
+  if (state === "busy") {
+    showProgressDialog();
+    appendProgressStep(label, "active");
+  }
+  if (state === "error") {
+    appendProgressStep(label, "error");
+  }
 };
 
 const setIdle = (label = "Ready") => {
   statusText.textContent = label;
   statusDot.className = "status-dot";
+  hideProgressDialogDelayed();
 };
 
 const showProgress = (pct) => {
@@ -69,6 +82,63 @@ const hideProgress = () => {
   progressTrack.hidden = true;
   progressFill.style.width = "0%";
 };
+
+let progressHideTimer = null;
+const showProgressDialog = () => {
+  if (progressHideTimer) {
+    clearTimeout(progressHideTimer);
+    progressHideTimer = null;
+  }
+  progressDialog.hidden = false;
+};
+
+const hideProgressDialogDelayed = () => {
+  if (!progressDialog.hidden) {
+    progressHideTimer = setTimeout(() => {
+      progressDialog.hidden = true;
+      progressList.innerHTML = "";
+    }, 1200);
+  }
+};
+
+const appendProgressStep = (label, state = "pending", note = "") => {
+  const item = document.createElement("li");
+  item.className = "progress-item";
+  item.dataset.state = state;
+  const title = document.createElement("div");
+  title.className = "progress-item-label";
+  title.textContent = label;
+  item.appendChild(title);
+  if (note) {
+    const detail = document.createElement("div");
+    detail.className = "progress-item-note";
+    detail.textContent = note;
+    item.appendChild(detail);
+  }
+  progressList.appendChild(item);
+  return item;
+};
+
+const updateProgressStep = (item, state, note) => {
+  if (!item) return;
+  item.dataset.state = state;
+  if (note) {
+    const existing = item.querySelector(".progress-item-note");
+    if (existing) {
+      existing.textContent = note;
+    } else {
+      const detail = document.createElement("div");
+      detail.className = "progress-item-note";
+      detail.textContent = note;
+      item.appendChild(detail);
+    }
+  }
+};
+
+progressDismiss?.addEventListener("click", () => {
+  progressDialog.hidden = true;
+  progressList.innerHTML = "";
+});
 
 const formatDuration = (seconds) => {
   if (!seconds) return "--:--";
@@ -233,24 +303,40 @@ const extractMetadata = async (file) => {
 // ---------------------------------------------------------------------------
 const loadFFmpeg = async () => {
   if (ffmpegReady) return;
-  updateStatus("Loading FFmpeg...");
-  showProgress(10);
+  if (ffmpegLoadingPromise) {
+    await ffmpegLoadingPromise;
+    return;
+  }
 
-  ffmpeg = new FFmpeg();
-  ffmpeg.on("progress", ({ progress }) => showProgress(20 + progress * 70));
+  ffmpegLoadingPromise = (async () => {
+    updateStatus("Loading FFmpeg...");
+    showProgress(10);
 
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(
-      `${baseURL}/ffmpeg-core.wasm`,
-      "application/wasm"
-    ),
-  });
+    ffmpeg = new FFmpeg();
+    ffmpeg.on("progress", ({ progress }) => showProgress(20 + progress * 70));
 
-  ffmpegReady = true;
-  hideProgress();
-  setIdle();
+    const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
+    try {
+      const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript");
+      const wasmURL = await toBlobURL(
+        `${baseURL}/ffmpeg-core.wasm`,
+        "application/wasm"
+      );
+      await ffmpeg.load({ coreURL, wasmURL });
+      ffmpegReady = true;
+      hideProgress();
+      setIdle();
+    } catch (err) {
+      console.error("FFmpeg failed to load", err);
+      hideProgress();
+      updateStatus("FFmpeg failed to load", "error");
+      throw err;
+    } finally {
+      ffmpegLoadingPromise = null;
+    }
+  })();
+
+  return ffmpegLoadingPromise;
 };
 
 // ---------------------------------------------------------------------------

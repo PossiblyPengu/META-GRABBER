@@ -36,6 +36,19 @@
         <div class="progress-fill" id="progress-fill"></div>
       </div>
 
+      <div class="progress-dialog" id="progress-dialog" hidden>
+        <div class="progress-dialog-card">
+          <div class="progress-dialog-header">
+            <div>
+              <p class="progress-dialog-eyebrow">Activity</p>
+              <h3 id="progress-dialog-title">Working…</h3>
+            </div>
+            <button type="button" class="btn btn-ghost btn-xs" id="progress-dismiss">Hide</button>
+          </div>
+          <ul class="progress-list" id="progress-list"></ul>
+        </div>
+      </div>
+
       <input id="file-input" type="file" accept="audio/mpeg,.mp3" multiple hidden />
 
       <form id="compile-form">

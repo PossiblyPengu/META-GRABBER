@@ -112,6 +112,96 @@ body {
   transition: width 0.3s ease;
 }
 
+/* ---- Progress dialog ---- */
+.progress-dialog {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 200;
+}
+
+.progress-dialog-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(320px, calc(100vw - 2.5rem));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 1rem 1rem 0.75rem;
+}
+
+.progress-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.progress-dialog-eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.progress-dialog-header h3 {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+}
+
+.progress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.progress-item {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-height: 32px;
+}
+
+.progress-item-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.progress-item-note {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.progress-item[data-state="pending"] {
+  opacity: 0.65;
+}
+
+.progress-item[data-state="active"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.progress-item[data-state="done"] {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.progress-item[data-state="skipped"] {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.progress-item[data-state="error"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* ---- Form ---- */
 form {
   flex: 1;
