@@ -1,7 +1,7 @@
 /**
  * gdrive.js
  *
- * Google Drive integration for M4B Foundry.
+ * Google Drive integration for BookForge.
  * Handles OAuth2 (via Google Identity Services), the Google Picker for
  * selecting files, and Drive API v3 for downloading / uploading.
  *
@@ -232,7 +232,7 @@ export const uploadToDrive = async (blob, filename) => {
   };
 
   // Build multipart body
-  const boundary = "m4b_foundry_boundary_" + Date.now();
+  const boundary = "bookforge_boundary_" + Date.now();
   const metaPart =
     `--${boundary}\r\n` +
     "Content-Type: application/json; charset=UTF-8\r\n\r\n" +

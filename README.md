@@ -1,4 +1,4 @@
-# M4B Foundry
+# BookForge
 
 A browser-based audiobook compiler that converts multiple MP3 chapter files into a single M4B file with embedded metadata, chapters, and cover art.
 
@@ -34,7 +34,7 @@ npm run test:watch   # run tests in watch mode
 
 ## Architecture
 
-```
+```text
 docs/
 ├── index.html           # single-page app entry point
 ├── coi-serviceworker.js  # COOP/COEP headers for WASM
