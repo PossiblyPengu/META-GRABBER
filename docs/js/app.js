@@ -704,8 +704,6 @@ const removeTrack = (index) => {
 // ---------------------------------------------------------------------------
 // Book lookup (step 2)
 // ---------------------------------------------------------------------------
-let lastLookupResults = [];
-
 const performLookup = async (query) => {
   if (!query || query.trim().length < 2) return;
 
@@ -717,8 +715,6 @@ const performLookup = async (query) => {
   matchResultsGrid.appendChild(spinner);
 
   const results = await searchBooks(query, 6);
-  lastLookupResults = results;
-
   if (!results.length) {
     spinner.textContent = "No results found. Try a different search.";
     return;

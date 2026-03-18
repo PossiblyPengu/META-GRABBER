@@ -51,36 +51,114 @@ const ensureGIS = async () => {
 // ---------------------------------------------------------------------------
 // Auth — Google Identity Services token model (implicit flow)
 // ---------------------------------------------------------------------------
+
+const TOKEN_STORAGE_KEY = "bf-gdrive-token";
+const TOKEN_EXPIRY_KEY = "bf-gdrive-token-expiry";
+
+/** Restore a previously cached token if it hasn't expired. */
+const restoreCachedToken = () => {
+  try {
+    const cached = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+    const expiry = Number(sessionStorage.getItem(TOKEN_EXPIRY_KEY));
+    if (cached && expiry && Date.now() < expiry) {
+      accessToken = cached;
+      // Schedule expiry cleanup
+      setTimeout(() => {
+        accessToken = null;
+        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+        sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+        notifyAuthChange();
+      }, expiry - Date.now());
+      return true;
+    }
+  } catch { /* sessionStorage blocked */ }
+  return false;
+};
+
+/** Cache token so it survives page reloads within the session. */
+const cacheToken = (token, expiresInSec) => {
+  try {
+    const expiryMs = Date.now() + (expiresInSec - 60) * 1000;
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    sessionStorage.setItem(TOKEN_EXPIRY_KEY, String(expiryMs));
+  } catch { /* sessionStorage blocked */ }
+};
+
+/** Validate that a cached token is still accepted by Google. */
+const validateToken = async (token) => {
+  try {
+    const resp = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`);
+    return resp.ok;
+  } catch {
+    return false;
+  }
+};
+
+// Try to restore on module load
+restoreCachedToken();
+
+const SCOPES = "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file";
+
+const initTokenClient = (resolve, reject, promptMode) => {
+  if (!tokenClient) {
+    tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPES,
+      callback: (resp) => {
+        if (resp.error) {
+          reject(new Error(resp.error_description || resp.error));
+          return;
+        }
+        accessToken = resp.access_token;
+        cacheToken(accessToken, resp.expires_in);
+        setTimeout(() => {
+          accessToken = null;
+          sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+          sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+          notifyAuthChange();
+        }, (resp.expires_in - 60) * 1000);
+        notifyAuthChange();
+        resolve(accessToken);
+      },
+      error_callback: (err) => {
+        reject(new Error(err.message || "Google sign-in failed"));
+      },
+    });
+  }
+  tokenClient.requestAccessToken({ prompt: promptMode });
+};
+
 export const ensureAuth = async () => {
+  // 1. Use in-memory token if available
   if (accessToken) return accessToken;
+
+  // 2. Try cached token from sessionStorage
+  if (restoreCachedToken()) {
+    const valid = await validateToken(accessToken);
+    if (valid) {
+      notifyAuthChange();
+      return accessToken;
+    }
+    // Cached token expired/revoked — clear it
+    accessToken = null;
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+  }
 
   await ensureGIS();
 
-  return new Promise((resolve, reject) => {
-    if (!tokenClient) {
-      tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file",
-        callback: (resp) => {
-          if (resp.error) {
-            reject(new Error(resp.error_description || resp.error));
-            return;
-          }
-          accessToken = resp.access_token;
-          setTimeout(() => {
-            accessToken = null;
-            notifyAuthChange();
-          }, (resp.expires_in - 60) * 1000);
-          notifyAuthChange();
-          resolve(accessToken);
-        },
-        error_callback: (err) => {
-          reject(new Error(err.message || "Google sign-in failed"));
-        },
-      });
-    }
+  // 3. Try silent re-auth (no popup if user previously consented)
+  try {
+    return await new Promise((resolve, reject) => {
+      initTokenClient(resolve, reject, "none");
+    });
+  } catch {
+    // Silent auth failed — fall through to interactive prompt
+  }
 
-    tokenClient.requestAccessToken();
+  // 4. Interactive consent (shows popup)
+  return new Promise((resolve, reject) => {
+    initTokenClient(resolve, reject, "consent");
   });
 };
 
@@ -90,6 +168,10 @@ export const signOut = () => {
   if (accessToken) {
     window.google.accounts.oauth2.revoke(accessToken);
     accessToken = null;
+    try {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+    } catch { /* ignore */ }
     notifyAuthChange();
   }
 };

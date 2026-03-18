@@ -25,7 +25,13 @@ export default [
         clients: "readonly",
         navigator: "readonly",
         localStorage: "readonly",
+        sessionStorage: "readonly",
         indexedDB: "readonly",
+        AbortController: "readonly",
+        OfflineAudioContext: "readonly",
+        getComputedStyle: "readonly",
+        requestAnimationFrame: "readonly",
+        prompt: "readonly",
       },
     },
     rules: {
