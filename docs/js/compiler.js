@@ -4,8 +4,11 @@
  * FFmpeg WASM loading and M4B compilation logic.
  */
 
-import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
-import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
+// FFmpeg modules are loaded dynamically on first compile to avoid
+// downloading ~31 MB of WASM + JS on page load.
+let FFmpeg = null;
+let fetchFile = null;
+let toBlobURL = null;
 
 let ffmpeg = null;
 let ffmpegReady = false;
@@ -21,6 +24,19 @@ export const loadFFmpeg = async (ui) => {
 
   ffmpegLoadingPromise = (async () => {
     ui.updateStatus("Loading FFmpeg...");
+    ui.showProgress(5);
+
+    // Lazy-load FFmpeg modules only when needed
+    if (!FFmpeg) {
+      const [ffmpegMod, utilMod] = await Promise.all([
+        import("https://esm.sh/@ffmpeg/ffmpeg@0.12.10"),
+        import("https://esm.sh/@ffmpeg/util@0.12.1"),
+      ]);
+      FFmpeg = ffmpegMod.FFmpeg;
+      fetchFile = utilMod.fetchFile;
+      toBlobURL = utilMod.toBlobURL;
+    }
+
     ui.showProgress(10);
     ffmpeg = new FFmpeg();
     ffmpeg.on("progress", ({ progress }) => ui.showProgress(20 + progress * 70));

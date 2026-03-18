@@ -3,7 +3,7 @@ import { searchBooks, fetchCoverBlob, fetchBookDetails } from "./book-lookup.js"
 import { extractMetadata } from "./metadata.js";
 import { saveSession, loadSession, clearSession } from "./session.js";
 import { compileM4B } from "./compiler.js";
-import { createWaveform } from "./waveform.js";
+import { createWaveform, pruneWaveformCache } from "./waveform.js";
 import { pushState, undo, redo, clearHistory } from "./history.js";
 import { importFromDrive, exportToDrive, gdriveDownloading, isPickerHidden, setPickerVisible } from "./drive-ui.js";
 

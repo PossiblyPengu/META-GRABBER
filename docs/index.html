@@ -14,8 +14,10 @@
     <link rel="stylesheet" href="css/main.css" />
     <link rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#f0a040" />
-    <script>window.coi = { coepCredentialless: () => true };</script>
-    <script src="coi-serviceworker.js"></script>
+    <script>
+      // Cross-origin isolation is now handled by the unified sw.js
+      window.coi = { shouldRegister: () => false };
+    </script>
   </head>
   <body>
     <div class="app">
@@ -382,7 +384,20 @@
     <script src="js/app.js" type="module"></script>
     <script>
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("sw.js").catch(() => {});
+        navigator.serviceWorker.register("sw.js").then((reg) => {
+          // Tell SW whether to use credentialless COEP (non-Chrome)
+          const useCredentialless = !(window.chrome || window.netscape);
+          if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: "coepCredentialless",
+              value: useCredentialless,
+            });
+          }
+          // Reload once to activate cross-origin isolation on first visit
+          if (!window.crossOriginIsolated && reg.active && !navigator.serviceWorker.controller) {
+            window.location.reload();
+          }
+        }).catch(() => {});
       }
     </script>
   </body>
