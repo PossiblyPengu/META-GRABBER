@@ -107,6 +107,7 @@ themeToggle.addEventListener("click", () => {
 // ---------------------------------------------------------------------------
 const TRACK_RENDER_BATCH_SIZE = 20;
 const MAX_WAVEFORM_CONCURRENCY = 2;
+const WAVEFORM_TRACK_LIMIT = 80;
 const AUTO_LOOKUP_IDLE_DELAY = 1600;
 
 const supportsIdleCallback = typeof window.requestIdleCallback === "function";
@@ -130,6 +131,11 @@ const cancelScheduled = (handle) => {
   }
 };
 
+const waitForIdle = (timeout = 50) =>
+  new Promise((resolve) => {
+    scheduleIdle(() => resolve(), timeout);
+  });
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -149,6 +155,7 @@ let waveformWorkers = 0;
 let waveformObserver = null;
 let undoScheduleHandle = null;
 let sessionSaveHandle = null;
+let savedTrackKeys = new Set();
 
 const scheduleAutoLookup = (query) => {
   cancelScheduled(autoLookupHandle);
@@ -357,6 +364,8 @@ const formatDuration = (seconds) => {
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
 };
+
+const fileKey = (file) => `${file.name}|${file.size}|${file.lastModified}`;
 
 // ---------------------------------------------------------------------------
 // Cover art management
@@ -1267,7 +1276,7 @@ const gatherState = () => ({
   inferredBook,
   coverBlob: coverFile || null,
   tracks: tracks.map((t) => ({
-    blob: t.file,
+    fileKey: fileKey(t.file),
     fileName: t.file.name,
     fileType: t.file.type,
     fileLastModified: t.file.lastModified,
@@ -1278,14 +1287,23 @@ const gatherState = () => ({
 
 const restoreState = (saved) => {
   // Reconstruct tracks with File objects
-  tracks = saved.tracks.map((t) => ({
-    file: new File([t.blob], t.fileName, {
-      type: t.fileType || "audio/mpeg",
-      lastModified: t.fileLastModified,
-    }),
-    meta: t.meta,
-    chapterName: t.chapterName,
-  }));
+  tracks = saved.tracks.map((t) => {
+    const blobSource = t.blob instanceof Blob ? t.blob : null;
+    const file = blobSource
+      ? new File([blobSource], t.fileName, {
+          type: t.fileType || "audio/mpeg",
+          lastModified: t.fileLastModified,
+        })
+      : new File([], t.fileName, {
+          type: t.fileType || "audio/mpeg",
+          lastModified: t.fileLastModified,
+        });
+    return {
+      file,
+      meta: t.meta,
+      chapterName: t.chapterName,
+    };
+  });
 
   // Restore form fields
   const f = saved.formFields;
@@ -1307,15 +1325,32 @@ const restoreState = (saved) => {
   // Refresh UI
   refreshTrackList();
   goToStep(saved.currentStep || "upload");
+  savedTrackKeys = new Set(tracks.map((t) => fileKey(t.file)));
 };
 
 const scheduleSessionSave = () => {
   cancelScheduled(sessionSaveHandle);
   sessionSaveHandle = scheduleIdle(async () => {
     sessionSaveHandle = null;
-    const result = await saveSession(gatherState());
+    const state = gatherState();
+    const currentKeys = new Set();
+    const trackBlobs = [];
+    state.tracks.forEach((trackMeta, index) => {
+      currentKeys.add(trackMeta.fileKey);
+      if (!savedTrackKeys.has(trackMeta.fileKey)) {
+        trackBlobs.push({ key: trackMeta.fileKey, blob: tracks[index]?.file });
+      }
+    });
+    const result = await saveSession({
+      ...state,
+      trackBlobs,
+      pruneTrackStore: true,
+    });
     if (result?.error === "QuotaExceededError") {
       updateStatus("Storage full — session not saved", "error");
+    }
+    if (!result?.error) {
+      savedTrackKeys = currentKeys;
     }
   }, 1200);
 };
