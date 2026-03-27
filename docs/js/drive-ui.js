@@ -177,10 +177,12 @@ const navigateToFolder = async (folderId) => {
 // Picker open / close
 // ---------------------------------------------------------------------------
 const openDrivePicker = () => new Promise((resolve) => {
+  console.debug("[DriveUI] openDrivePicker called", { time: new Date().toISOString(), stack: (new Error().stack) });
   pickerSelected.clear();
   pickerBreadcrumbs = [{ id: "root", name: "My Drive" }];
   pickerResolve = resolve;
   gdrivePickerModal.hidden = false;
+  console.debug("[DriveUI] gdrivePickerModal.hidden set to false", { time: new Date().toISOString() });
   gdrivePickerClose.focus();
   refreshPickerCount();
   navigateToFolder("root");
@@ -301,13 +303,17 @@ gdriveSelectAll.addEventListener("change", () => {
  * @returns {Promise<File[]>}
  */
 export const importFromDrive = async (ui) => {
+  console.debug("[DriveUI] importFromDrive called", { time: new Date().toISOString(), stack: (new Error().stack) });
   ui.updateStatus("To import files, BookForge needs permission to read your Google Drive. No files will be modified.", "info");
   await new Promise((r) => setTimeout(r, 1800));
   ui.updateStatus("Connecting to Google Drive...");
   try {
+    console.debug("[DriveUI] Calling ensureAuth", { time: new Date().toISOString() });
     await ensureAuth("https://www.googleapis.com/auth/drive.readonly");
+    console.debug("[DriveUI] ensureAuth resolved", { time: new Date().toISOString() });
     ui.setIdle();
   } catch (err) {
+    console.debug("[DriveUI] ensureAuth error", { error: err, time: new Date().toISOString(), stack: (new Error().stack) });
     // Special handling for GIS popup closed/cancelled
     if (err && (err.message === "Popup window closed" || err.message === "Failed to open popup window" || /popup/i.test(err.message))) {
       ui.updateStatus("Google sign-in was not completed. Please try again and complete the sign-in in the popup window.", "error");
@@ -318,13 +324,16 @@ export const importFromDrive = async (ui) => {
     return [];
   }
 
+  console.debug("[DriveUI] Calling openDrivePicker", { time: new Date().toISOString() });
   const selected = await openDrivePicker();
+  console.debug("[DriveUI] openDrivePicker resolved", { selected, time: new Date().toISOString() });
   if (!selected.length) return [];
 
   const progressRows = showDownloadProgress(selected);
 
   gdrivePickerModal.hidden = false;
   gdriveDownloading = true;
+  console.debug("[DriveUI] gdrivePickerModal.hidden set to false (download phase)", { time: new Date().toISOString() });
 
   ui.updateStatus(`Downloading ${selected.length} file${selected.length > 1 ? "s" : ""}...`);
 
