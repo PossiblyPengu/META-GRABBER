@@ -164,7 +164,7 @@ export const ensureAuth = async (scope) => {
   try {
     await ensureGIS();
   } catch (err) {
-    throw new Error("Failed to load Google Identity Services: " + err.message);
+    throw new Error("Failed to load Google Identity Services: " + err.message, { cause: err });
   }
 
   // 3. Try silent re-auth (no popup if user previously consented)

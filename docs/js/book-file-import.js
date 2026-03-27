@@ -1,7 +1,6 @@
 const SUPPORTED_EXTENSIONS = ["m4b", "epub", "pdf"];
 const EPUB_MIME = "application/epub+zip";
 
-const isExtension = (file, ext) => file.name?.toLowerCase().endsWith(`.${ext}`);
 const fileTypeMatches = (file, typePrefix) => file.type?.startsWith(typePrefix);
 
 const decodeXmlEntities = (text) =>

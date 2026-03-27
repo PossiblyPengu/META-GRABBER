@@ -7,55 +7,55 @@
 import { ensureAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
 
 // ---------------------------------------------------------------------------
-// DOM references
-// ---------------------------------------------------------------------------
-const $ = (id) => document.getElementById(id);
-const gdrivePickerModal = $("gdrive-picker-modal");
-const gdrivePickerClose = $("gdrive-picker-close");
-const gdrivePickerCancel = $("gdrive-picker-cancel");
-const gdrivePickerSelect = $("gdrive-picker-select");
-const gdriveFileList = $("gdrive-file-list");
-const gdriveBreadcrumb = $("gdrive-breadcrumb");
-const gdriveSelectedCount = $("gdrive-selected-count");
-const gdriveSelectAll = $("gdrive-select-all");
-const gdriveSelectAllLabel = gdriveSelectAll.closest("label");
-const gdrivePickerFooter = $("gdrive-picker-footer");
-const gdriveDownloadProgress = $("gdrive-download-progress");
-const gdriveDownloadList = $("gdrive-download-list");
+/**
+ * Import files from Google Drive. Returns File[] to be added to tracks.
+ * @param {{ updateStatus: Function, setIdle: Function }} ui
+ * @returns {Promise<File[]>}
+ */
+export const importFromDrive = async (ui) => {
+  ui.updateStatus("To import files, BookForge needs permission to read your Google Drive. No files will be modified.", "info");
+  await new Promise((r) => setTimeout(r, 1800));
+  ui.updateStatus("Connecting to Google Drive...");
+  try {
+    await ensureAuth("https://www.googleapis.com/auth/drive.readonly");
+    ui.setIdle();
+  } catch (err) {
+    ui.updateStatus(err.message || "Google Drive authentication failed", "error");
+    setTimeout(ui.setIdle, 3000);
+    return [];
+  }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-const pickerSelected = new Map();
-let pickerResolve = null;
-let pickerBreadcrumbs = [{ id: "root", name: "My Drive" }];
-let pickerCurrentFiles = [];
-export let gdriveDownloading = false;
+  const selected = await openDrivePicker();
+  if (!selected.length) return [];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-const formatBytes = (bytes) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+  const progressRows = showDownloadProgress(selected);
 
-const refreshPickerCount = () => {
-  const n = pickerSelected.size;
-  gdriveSelectedCount.textContent = `${n} file${n !== 1 ? "s" : ""} selected`;
-  gdrivePickerSelect.disabled = n === 0;
-};
+  gdrivePickerModal.hidden = false;
+  gdriveDownloading = true;
 
-const renderBreadcrumbs = () => {
-  gdriveBreadcrumb.textContent = "";
-  pickerBreadcrumbs.forEach((crumb, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "gdrive-crumb-sep";
-      sep.textContent = "/";
-      gdriveBreadcrumb.appendChild(sep);
+  ui.updateStatus(`Downloading ${selected.length} file${selected.length > 1 ? "s" : ""}...`);
+
+  const files = await downloadFiles(selected, (index, _name, loaded, total, done) => {
+    const pr = progressRows[index];
+    if (!pr) return;
+    if (total > 0) {
+      const pct = Math.min(100, (loaded / total) * 100);
+      pr.fill.style.width = `${pct}%`;
+      pr.size.textContent = done ? formatBytes(total) : `${formatBytes(loaded)} / ${formatBytes(total)}`;
+    } else if (done) {
+      pr.fill.style.width = "100%";
+      pr.size.textContent = loaded > 0 ? formatBytes(loaded) : "Failed";
     }
+    if (done) pr.row.classList.add("done");
+  });
+
+  await new Promise((r) => setTimeout(r, 600));
+  gdriveDownloading = false;
+  gdrivePickerModal.hidden = true;
+  hideDownloadProgress();
+
+  return files;
+};
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn btn-ghost btn-xs gdrive-crumb";
