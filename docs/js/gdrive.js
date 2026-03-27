@@ -115,12 +115,12 @@ let lastScope = null;
 const initTokenClient = (scope, resolve, reject, promptMode) => {
   // If scope changes, re-init the token client
   if (!tokenClient || lastScope !== scope) {
-    console.debug("Initializing GIS token client", { client_id: GOOGLE_CLIENT_ID, scope, promptMode });
+    console.debug("[GIS] Initializing token client", { client_id: GOOGLE_CLIENT_ID, scope, promptMode, time: new Date().toISOString(), stack: (new Error().stack) });
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope,
       callback: (resp) => {
-        console.debug("GIS callback response:", resp);
+        console.debug("[GIS] Callback response", { resp, time: new Date().toISOString(), stack: (new Error().stack) });
         if (resp.error) {
           console.error("GIS error in callback:", resp.error, resp.error_description);
           reject(new Error(resp.error_description || resp.error));
@@ -143,13 +143,13 @@ const initTokenClient = (scope, resolve, reject, promptMode) => {
         resolve(accessToken);
       },
       error_callback: (err) => {
-        console.error("GIS error_callback:", err);
+        console.error("[GIS] error_callback", { err, time: new Date().toISOString(), stack: (new Error().stack) });
         reject(new Error(err.message || "Google sign-in failed"));
       },
     });
     lastScope = scope;
   }
-  console.debug("Requesting GIS access token", { prompt: promptMode, scope });
+  console.debug("[GIS] Requesting access token", { prompt: promptMode, scope, time: new Date().toISOString(), stack: (new Error().stack) });
   tokenClient.requestAccessToken({ prompt: promptMode });
 };
 
@@ -160,24 +160,24 @@ const initTokenClient = (scope, resolve, reject, promptMode) => {
  * @returns {Promise<string>} accessToken
  */
 export const ensureAuth = async (scope) => {
-  console.debug("ensureAuth called", { scope });
+  console.debug("[GIS] ensureAuth called", { scope, time: new Date().toISOString(), stack: (new Error().stack) });
   // 1. Use in-memory token if available
   if (accessToken) {
-    console.debug("Using in-memory access token");
+    console.debug("[GIS] Using in-memory access token", { time: new Date().toISOString(), stack: (new Error().stack) });
     return accessToken;
   }
 
   // 2. Try cached token from sessionStorage
   if (restoreCachedToken()) {
-    console.debug("Restored cached token from sessionStorage");
+    console.debug("[GIS] Restored cached token from sessionStorage", { time: new Date().toISOString(), stack: (new Error().stack) });
     const valid = await validateToken(accessToken);
     if (valid) {
-      console.debug("Cached token is valid");
+      console.debug("[GIS] Cached token is valid", { time: new Date().toISOString(), stack: (new Error().stack) });
       notifyAuthChange();
       return accessToken;
     }
     // Cached token expired/revoked — clear it
-    console.debug("Cached token expired or revoked");
+    console.debug("[GIS] Cached token expired or revoked", { time: new Date().toISOString(), stack: (new Error().stack) });
     accessToken = null;
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
@@ -185,7 +185,7 @@ export const ensureAuth = async (scope) => {
 
   try {
     await ensureGIS();
-    console.debug("GIS library loaded");
+    console.debug("[GIS] GIS library loaded", { time: new Date().toISOString(), stack: (new Error().stack) });
   } catch (err) {
     console.error("Failed to load Google Identity Services:", err);
     throw new Error("Failed to load Google Identity Services: " + err.message, { cause: err });
@@ -193,17 +193,17 @@ export const ensureAuth = async (scope) => {
 
   // 3. Try silent re-auth (no popup if user previously consented)
   try {
-    console.debug("Attempting silent GIS re-auth");
+    console.debug("[GIS] Attempting silent GIS re-auth", { time: new Date().toISOString(), stack: (new Error().stack) });
     return await new Promise((resolve, reject) => {
       initTokenClient(scope, resolve, reject, "none");
     });
   } catch (e) {
-    console.debug("Silent GIS re-auth failed", e);
+    console.debug("[GIS] Silent GIS re-auth failed", { error: e, time: new Date().toISOString(), stack: (new Error().stack) });
     // Silent auth failed — fall through to interactive prompt
   }
 
   // 4. Interactive consent (shows popup)
-  console.debug("Requesting interactive GIS consent");
+  console.debug("[GIS] Requesting interactive GIS consent", { time: new Date().toISOString(), stack: (new Error().stack) });
   return new Promise((resolve, reject) => {
     initTokenClient(scope, resolve, reject, "consent");
   });
