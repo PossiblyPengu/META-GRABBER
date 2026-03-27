@@ -32,14 +32,21 @@ const notifyAuthChange = () => { authChangeCallback?.(!!accessToken); };
 const loadScript = (src) =>
   new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
+      console.debug("GIS script already loaded:", src);
       resolve();
       return;
     }
     const s = document.createElement("script");
     s.src = src;
     s.async = true;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    s.onload = () => {
+      console.debug("GIS script loaded:", src);
+      resolve();
+    };
+    s.onerror = () => {
+      console.error("Failed to load GIS script:", src);
+      reject(new Error(`Failed to load ${src}`));
+    };
     document.head.appendChild(s);
   });
 
@@ -108,13 +115,19 @@ let lastScope = null;
 const initTokenClient = (scope, resolve, reject, promptMode) => {
   // If scope changes, re-init the token client
   if (!tokenClient || lastScope !== scope) {
+    console.debug("Initializing GIS token client", { client_id: GOOGLE_CLIENT_ID, scope, promptMode });
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope,
       callback: (resp) => {
+        console.debug("GIS callback response:", resp);
         if (resp.error) {
+          console.error("GIS error in callback:", resp.error, resp.error_description);
           reject(new Error(resp.error_description || resp.error));
           return;
+        }
+        if (!resp.access_token) {
+          console.error("No access token in GIS response:", resp);
         }
         accessToken = resp.access_token;
         cacheToken(accessToken, resp.expires_in);
@@ -130,11 +143,13 @@ const initTokenClient = (scope, resolve, reject, promptMode) => {
         resolve(accessToken);
       },
       error_callback: (err) => {
+        console.error("GIS error_callback:", err);
         reject(new Error(err.message || "Google sign-in failed"));
       },
     });
     lastScope = scope;
   }
+  console.debug("Requesting GIS access token", { prompt: promptMode, scope });
   tokenClient.requestAccessToken({ prompt: promptMode });
 };
 
@@ -145,17 +160,24 @@ const initTokenClient = (scope, resolve, reject, promptMode) => {
  * @returns {Promise<string>} accessToken
  */
 export const ensureAuth = async (scope) => {
+  console.debug("ensureAuth called", { scope });
   // 1. Use in-memory token if available
-  if (accessToken) return accessToken;
+  if (accessToken) {
+    console.debug("Using in-memory access token");
+    return accessToken;
+  }
 
   // 2. Try cached token from sessionStorage
   if (restoreCachedToken()) {
+    console.debug("Restored cached token from sessionStorage");
     const valid = await validateToken(accessToken);
     if (valid) {
+      console.debug("Cached token is valid");
       notifyAuthChange();
       return accessToken;
     }
     // Cached token expired/revoked — clear it
+    console.debug("Cached token expired or revoked");
     accessToken = null;
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
@@ -163,20 +185,25 @@ export const ensureAuth = async (scope) => {
 
   try {
     await ensureGIS();
+    console.debug("GIS library loaded");
   } catch (err) {
+    console.error("Failed to load Google Identity Services:", err);
     throw new Error("Failed to load Google Identity Services: " + err.message, { cause: err });
   }
 
   // 3. Try silent re-auth (no popup if user previously consented)
   try {
+    console.debug("Attempting silent GIS re-auth");
     return await new Promise((resolve, reject) => {
       initTokenClient(scope, resolve, reject, "none");
     });
-  } catch {
+  } catch (e) {
+    console.debug("Silent GIS re-auth failed", e);
     // Silent auth failed — fall through to interactive prompt
   }
 
   // 4. Interactive consent (shows popup)
+  console.debug("Requesting interactive GIS consent");
   return new Promise((resolve, reject) => {
     initTokenClient(scope, resolve, reject, "consent");
   });
