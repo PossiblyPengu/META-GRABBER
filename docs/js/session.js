@@ -7,7 +7,7 @@
  */
 
 const DB_NAME = "bookforge";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = "session";
 const TRACK_STORE = "sessionTracks";
 const SESSION_KEY = "session";
