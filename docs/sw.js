@@ -1,3 +1,5 @@
+
+/* global caches, Headers, Request, Response */
 /**
  * sw.js — BookForge unified service worker
  *
