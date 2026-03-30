@@ -378,3 +378,29 @@ export const uploadToDrive = async (blob, filename) => {
 
   return resp.json();
 };
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+
+// Wrapper for Drive auth that handles iOS gracefully
+export const ensureDriveAuth = async (scope) => {
+  if (isIOS()) {
+    // Option 1: Use redirect-based OAuth (recommended for iOS)
+    // You must configure your OAuth client for this redirect URI
+    const redirectUri = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope,
+      include_granted_scopes: 'true',
+      state: 'drive-ios',
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    // The app should handle the access_token in the URL fragment after redirect
+    return new Promise(() => {}); // Prevent further execution
+  }
+  // Non-iOS: use popup-based flow
+  return ensureAuth(scope);
+};

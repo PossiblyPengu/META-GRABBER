@@ -38,7 +38,7 @@ const renderBreadcrumbs = () => {
  */
 
 
-import { ensureAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
+import { ensureDriveAuth, listFolder, downloadFiles, uploadToDrive } from "./gdrive.js";
 
 // DOM references
 const $ = (id) => document.getElementById(id);
@@ -309,7 +309,7 @@ export const importFromDrive = async (ui) => {
   ui.updateStatus("Connecting to Google Drive...");
   try {
     console.debug("[DriveUI] Calling ensureAuth", { time: new Date().toISOString() });
-    await ensureAuth("https://www.googleapis.com/auth/drive.readonly");
+    await ensureDriveAuth("https://www.googleapis.com/auth/drive.readonly");
     console.debug("[DriveUI] ensureAuth resolved", { time: new Date().toISOString() });
     ui.setIdle();
   } catch (err) {
