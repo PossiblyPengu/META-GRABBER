@@ -125,8 +125,20 @@ self.addEventListener("fetch", (event) => {
  */
 function addIsolationHeaders(response, url) {
   if (!response || response.status === 0) return response;
-  // Do NOT add COOP/COEP headers to index.html (main app shell)
-  if (url && /index\.html(\?.*)?$/.test(url)) {
+  // Only add COOP/COEP headers to WASM files (or other specific types if needed)
+  // Do NOT add to index.html, JS, CSS, manifest, or other app shell files
+  if (
+    !url ||
+    /index\.html(\?.*)?$/.test(url) ||
+    /\.js(\?.*)?$/.test(url) ||
+    /\.css(\?.*)?$/.test(url) ||
+    /manifest\.json(\?.*)?$/.test(url) ||
+    /favicon\.ico(\?.*)?$/.test(url)
+  ) {
+    return response;
+  }
+  // Only add to .wasm or other explicitly listed files
+  if (!/\.wasm(\?.*)?$/.test(url)) {
     return response;
   }
   const headers = new Headers(response.headers);
