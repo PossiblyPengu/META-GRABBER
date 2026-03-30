@@ -19,42 +19,63 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
-    )
-  );
-  self.clients.claim();
-});
+      /**
+       * Add cross-origin isolation headers ONLY to files in the explicit allowlist.
+       * Never add to HTML, JS, CSS, manifest, favicon, or any app shell files.
+       * Extend the allowlist as needed for new WASM or special files.
+       */
+      function addIsolationHeaders(response, url) {
+        if (!response || response.status === 0) return response;
+        if (!url) return response;
 
-self.addEventListener("message", (ev) => {
-  if (!ev.data) return;
-  if (ev.data.type === "deregister") {
-    self.registration
-      .unregister()
-      .then(() => self.clients.matchAll())
-      .then((clients) => clients.forEach((c) => c.navigate(c.url)));
-  } else if (ev.data.type === "coepCredentialless") {
-    coepCredentialless = ev.data.value;
-  }
-});
+        // Explicit allowlist for COOP/COEP headers (add more as needed)
+        const COOP_COEP_ALLOWLIST = [
+          // Example: WASM files only
+          /\.wasm(\?.*)?$/i,
+          // Add more patterns here if needed
+        ];
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const CACHE_NAME = "bookforge-v2";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./css/main.css",
-  "./js/app.js",
-  "./js/book-lookup.js",
-  "./js/book-parser.js",
-  "./js/compiler.js",
-  "./js/drive-ui.js",
-  "./js/gdrive.js",
+        // Explicit denylist for app shell files (never add headers)
+        const COOP_COEP_DENYLIST = [
+          /index\.html(\?.*)?$/i,
+          /\.js(\?.*)?$/i,
+          /\.css(\?.*)?$/i,
+          /manifest\.json(\?.*)?$/i,
+          /favicon\.ico(\?.*)?$/i,
+          // Add more patterns here if needed
+        ];
+
+        // Denylist check: never add headers to these
+        for (const pattern of COOP_COEP_DENYLIST) {
+          if (pattern.test(url)) return response;
+        }
+
+        // Allowlist check: only add headers to these
+        let shouldAddHeaders = false;
+        for (const pattern of COOP_COEP_ALLOWLIST) {
+          if (pattern.test(url)) {
+            shouldAddHeaders = true;
+            break;
+          }
+        }
+        if (!shouldAddHeaders) return response;
+
+        // Add COOP/COEP headers
+        const headers = new Headers(response.headers);
+        headers.set(
+          "Cross-Origin-Embedder-Policy",
+          coepCredentialless ? "credentialless" : "require-corp"
+        );
+        if (!coepCredentialless) {
+          headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+        }
+        headers.set("Cross-Origin-Opener-Policy", "same-origin");
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      }
   "./js/history.js",
   "./js/metadata.js",
   "./js/session.js",
