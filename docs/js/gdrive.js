@@ -198,8 +198,12 @@ export const ensureAuth = async (scope) => {
       initTokenClient(scope, resolve, reject, "none");
     });
   } catch (e) {
-    console.debug("[GIS] Silent GIS re-auth failed", { error: e, time: new Date().toISOString(), stack: (new Error().stack) });
-    // Silent auth failed — fall through to interactive prompt
+    // If the error is popup_closed, do NOT retry with consent (prevents double popup)
+    if (e && e.message === "Popup window closed") {
+      throw e;
+    }
+    // Otherwise, try interactive
+    console.debug("[GIS] Silent GIS re-auth failed, trying interactive consent", { error: e, time: new Date().toISOString(), stack: (new Error().stack) });
   }
 
   // 4. Interactive consent (shows popup)
