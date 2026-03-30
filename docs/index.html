@@ -16,6 +16,7 @@
     <meta name="theme-color" content="#f0a040" />
     <script>
       // Cross-origin isolation is now handled by the unified sw.js
+      // COOP/COEP headers are NOT set here, so Google OAuth popups will work.
       window.coi = { shouldRegister: () => false };
     </script>
   </head>
