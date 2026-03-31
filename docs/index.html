@@ -386,6 +386,16 @@
     <script src="js/app.js" type="module"></script>
     <script>
       if ("serviceWorker" in navigator) {
+        // Deregister stale coi-serviceworker.js registrations — they inject
+        // Cross-Origin-Opener-Policy: same-origin which breaks Google OAuth popups.
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((reg) => {
+            if (reg.active && reg.active.scriptURL.includes("coi-serviceworker")) {
+              reg.unregister();
+            }
+          });
+        }).catch(() => {});
+
         navigator.serviceWorker.register("sw.js", { scope: "./" }).then((reg) => {
           // Tell SW whether to use credentialless COEP (non-Chrome)
           const useCredentialless = !(window.chrome || window.netscape);

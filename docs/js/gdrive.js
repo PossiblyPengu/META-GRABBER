@@ -198,25 +198,14 @@ export const ensureAuth = async (scope) => {
     throw new Error("Failed to load Google Identity Services: " + err.message, { cause: err });
   }
 
-  // 3. Try silent re-auth (no popup if user previously consented)
-  try {
-    console.debug("[GIS] Attempting silent GIS re-auth", { time: new Date().toISOString(), stack: (new Error().stack) });
-    return await new Promise((resolve, reject) => {
-      initTokenClient(scope, resolve, reject, "none");
-    });
-  } catch (e) {
-    // If the error is popup_closed, do NOT retry with consent (prevents double popup)
-    if (e && e.message === "Popup window closed") {
-      throw e;
-    }
-    // Otherwise, try interactive
-    console.debug("[GIS] Silent GIS re-auth failed, trying interactive consent", { error: e, time: new Date().toISOString(), stack: (new Error().stack) });
-  }
-
-  // 4. Interactive consent (shows popup)
+  // 3. Interactive consent (shows popup).
+  // We skip the prompt:"none" silent attempt intentionally: it opens a transient
+  // cross-origin popup that triggers COOP warnings and burns the user-gesture
+  // token, causing the real consent popup to be blocked or to silently fail.
+  // Cached-token handling above covers the silent-refresh case.
   console.debug("[GIS] Requesting interactive GIS consent", { time: new Date().toISOString(), stack: (new Error().stack) });
   return new Promise((resolve, reject) => {
-    initTokenClient(scope, resolve, reject, "consent");
+    initTokenClient(scope, resolve, reject, "");
   });
 };
 
