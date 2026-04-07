@@ -282,11 +282,16 @@ export const inferBook = (files, metadataList) => {
   const id3Result = id3Consensus(metadataList);
   const chapters = buildChapterNames(fnResult.chapters, metadataList, filenames);
 
-  // Title priority: ID3 album > filename title > first ID3 track title
+  // Title priority: ID3 album > filename title > single-file title tag > guessed from track titles
+  // For a single-file import (e.g. one M4B), common.title is often the book title, not a chapter name.
+  const singleFileTitle = (files.length === 1 && !id3Result.album && id3Result.trackTitles.length === 1)
+    ? id3Result.trackTitles[0]
+    : null;
   const title =
     id3Result.album ||
     fnResult.title ||
-    (id3Result.trackTitles.length ? guessBookFromTrackTitles(id3Result.trackTitles) : null);
+    singleFileTitle ||
+    (id3Result.trackTitles.length > 1 ? guessBookFromTrackTitles(id3Result.trackTitles) : null);
 
   // Author priority: ID3 artist > filename author
   const author = id3Result.artist || fnResult.author;

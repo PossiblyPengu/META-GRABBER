@@ -125,7 +125,7 @@ const readM4BFile = async (file) => {
   return {
     title: common.album || common.title || null,
     author: common.artist || common.artists?.[0] || null,
-    description: (common.comment && common.comment.join("\n").trim()) || null,
+    description: (Array.isArray(common.comment) ? common.comment.join("\n").trim() : (typeof common.comment === "string" ? common.comment.trim() : null)) || null,
     narrator: common.performer || null,
     coverBlob,
     chapters,

@@ -832,7 +832,12 @@ const addFiles = async (fileList) => {
 
   // Auto-advance to Match step and trigger search
   goToStep("match");
-  const searchQ = [inferredBook?.title, inferredBook?.author].filter(Boolean).join(" ");
+  // Fall back to form field values in case processBookFiles already populated them
+  // (e.g. a single M4B whose title/artist was set by readM4BFile but inferBook couldn't
+  // independently derive the title because common.album was unset)
+  const effectiveTitle = inferredBook?.title || (titleInput.value !== DEFAULT_TITLE ? titleInput.value : null);
+  const effectiveAuthor = inferredBook?.author || (authorInput.value !== DEFAULT_AUTHOR ? authorInput.value : null);
+  const searchQ = [effectiveTitle, effectiveAuthor].filter(Boolean).join(" ");
   if (searchQ.length >= 3) {
     lookupQuery.value = searchQ;
     scheduleAutoLookup(searchQ);
