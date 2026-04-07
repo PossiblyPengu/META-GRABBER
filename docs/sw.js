@@ -16,7 +16,6 @@ const APP_SHELL = [
   './js/history.js',
   './js/metadata.js',
   './js/session.js',
-  './js/waveform.js',
   './icon.svg'
 ];
 
