@@ -258,8 +258,22 @@ export const listFolder = async (folderId = "root") => {
 export const downloadFiles = async (items, onProgress) => {
   const token = await ensureAuth(DRIVE_READONLY_SCOPE);
   const files = [];
+
+  // Derive MIME type from filename extension so M4B, FLAC, OGG etc. are
+  // correctly identified downstream (metadata.js branches on isMp3 check).
+  const mimeFromName = (name, fallbackMime) => {
+    const ext = (name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase();
+    const map = {
+      mp3: "audio/mpeg", m4a: "audio/mp4", m4b: "audio/x-m4b",
+      aac: "audio/aac", ogg: "audio/ogg", oga: "audio/ogg",
+      opus: "audio/ogg", flac: "audio/flac", wav: "audio/wav",
+    };
+    return map[ext] || fallbackMime || "audio/mpeg";
+  };
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
+    const mimeType = mimeFromName(item.name, item.mimeType);
     const resp = await fetch(
       `${DRIVE_FILES_URL}/${item.id}?alt=media`,
       { headers: { Authorization: `Bearer ${token}` } }
@@ -283,8 +297,8 @@ export const downloadFiles = async (items, onProgress) => {
           loaded += value.length;
           onProgress(i, item.name, loaded, total, false);
         }
-        const blob = new Blob(chunks, { type: "audio/mpeg" });
-        files.push(new File([blob], item.name, { type: "audio/mpeg" }));
+        const blob = new Blob(chunks, { type: mimeType });
+        files.push(new File([blob], item.name, { type: mimeType }));
         onProgress(i, item.name, total, total, true);
       } catch (err) {
         console.warn(`Stream read failed for ${item.name}:`, err);
@@ -295,7 +309,10 @@ export const downloadFiles = async (items, onProgress) => {
     } else {
       onProgress?.(i, item.name, 0, 0, false);
       const blob = await resp.blob();
-      files.push(new File([blob], item.name, { type: "audio/mpeg" }));
+      // resp.blob() preserves the Content-Type from the response; override only
+      // if the server sent a generic type (e.g. application/octet-stream).
+      const finalType = blob.type && blob.type !== "application/octet-stream" ? blob.type : mimeType;
+      files.push(new File([blob], item.name, { type: finalType }));
       onProgress?.(i, item.name, blob.size, blob.size, true);
     }
   }
