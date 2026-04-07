@@ -779,6 +779,11 @@ form {
 }
 .rename-option:hover { background: var(--bg-hover); }
 
+#fetch-chapters-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chapters-card { min-height: 200px; }
 
 .track-list {

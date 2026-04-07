@@ -23,6 +23,7 @@ const chapterCount = $("chapter-count");
 const addMoreBtn = $("add-more-btn");
 const clearAllButton = $("clear-all");
 const restartBtn = $("restart-btn");
+const fetchChaptersBtn = $("fetch-chapters-btn");
 const compileButton = $("compile-button");
 const statusDot = $("status-dot");
 const statusText = $("status-text");
@@ -609,6 +610,8 @@ const refreshTrackList = () => {
 
   // Show Restart button whenever there are tracks
   if (restartBtn) restartBtn.hidden = false;
+  // Show Fetch Chapters button once we have tracks
+  if (fetchChaptersBtn) fetchChaptersBtn.hidden = false;
 
   const totalDuration = tracks.reduce((s, t) => s + (t.meta?.duration || 0), 0);
   const totalSize = tracks.reduce((s, t) => s + t.file.size, 0);
@@ -1157,6 +1160,7 @@ const clearAll = async () => {
   await clearSession();
   goToStep("upload");
   if (restartBtn) restartBtn.hidden = true;
+  if (fetchChaptersBtn) fetchChaptersBtn.hidden = true;
 };
 clearAllButton.addEventListener("click", clearAll);
 
@@ -1165,6 +1169,55 @@ uploadAddMoreBtn.addEventListener("click", () => fileInput.click());
 uploadClearBtn.addEventListener("click", clearAll);
 uploadNextBtn.addEventListener("click", () => goToStep("match"));
 restartBtn?.addEventListener("click", clearAll);
+
+// ---------------------------------------------------------------------------
+// Fetch Chapters from Google Books / Open Library
+// ---------------------------------------------------------------------------
+fetchChaptersBtn?.addEventListener("click", async () => {
+  if (!tracks.length) return;
+  const query = [titleInput.value, authorInput.value].filter((v) => v && v !== DEFAULT_TITLE && v !== DEFAULT_AUTHOR).join(" ");
+  if (!query.trim()) {
+    updateStatus("Enter a title or author first", "error");
+    setTimeout(setIdle, 3000);
+    return;
+  }
+  fetchChaptersBtn.disabled = true;
+  updateStatus("Searching for chapter names...");
+  try {
+    const results = await searchBooks(query, 3);
+    if (!results.length) {
+      updateStatus("No matching book found", "error");
+      setTimeout(setIdle, 3000);
+      return;
+    }
+    updateStatus("Fetching chapter list...");
+    let chapters = null;
+    for (const result of results) {
+      const details = await fetchBookDetails(result);
+      if (details.chapters?.length) {
+        chapters = details.chapters;
+        break;
+      }
+    }
+    if (!chapters?.length) {
+      updateStatus("No chapter list found for this book", "error");
+      setTimeout(setIdle, 3000);
+      return;
+    }
+    const count = Math.min(chapters.length, tracks.length);
+    for (let i = 0; i < count; i++) tracks[i].chapterName = chapters[i];
+    for (let i = count; i < tracks.length; i++) tracks[i].chapterName = `Chapter ${i + 1}`;
+    refreshTrackList();
+    if (onSessionChange) onSessionChange();
+    setIdle(`Applied ${count} chapter name${count !== 1 ? "s" : ""}`);
+  } catch (err) {
+    console.error("Fetch chapters failed:", err);
+    updateStatus(err.message || "Failed to fetch chapters", "error");
+    setTimeout(setIdle, 3000);
+  } finally {
+    fetchChaptersBtn.disabled = false;
+  }
+});
 
 // Drop zone + file input
 dropZone.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
