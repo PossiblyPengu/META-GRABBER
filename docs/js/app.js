@@ -22,6 +22,7 @@ const trackList = $("track-list");
 const chapterCount = $("chapter-count");
 const addMoreBtn = $("add-more-btn");
 const clearAllButton = $("clear-all");
+const restartBtn = $("restart-btn");
 const compileButton = $("compile-button");
 const statusDot = $("status-dot");
 const statusText = $("status-text");
@@ -602,8 +603,12 @@ const refreshTrackList = () => {
     empty.textContent = "No chapters added yet.";
     trackList.appendChild(empty);
     chapterCount.textContent = "";
+    if (restartBtn) restartBtn.hidden = true;
     return;
   }
+
+  // Show Restart button whenever there are tracks
+  if (restartBtn) restartBtn.hidden = false;
 
   const totalDuration = tracks.reduce((s, t) => s + (t.meta?.duration || 0), 0);
   const totalSize = tracks.reduce((s, t) => s + t.file.size, 0);
@@ -1151,6 +1156,7 @@ const clearAll = async () => {
   clearHistory();
   await clearSession();
   goToStep("upload");
+  if (restartBtn) restartBtn.hidden = true;
 };
 clearAllButton.addEventListener("click", clearAll);
 
@@ -1158,6 +1164,7 @@ clearAllButton.addEventListener("click", clearAll);
 uploadAddMoreBtn.addEventListener("click", () => fileInput.click());
 uploadClearBtn.addEventListener("click", clearAll);
 uploadNextBtn.addEventListener("click", () => goToStep("match"));
+restartBtn?.addEventListener("click", clearAll);
 
 // Drop zone + file input
 dropZone.addEventListener("click", (e) => { e.stopPropagation(); fileInput.click(); });
