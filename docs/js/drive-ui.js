@@ -304,11 +304,11 @@ gdriveSelectAll.addEventListener("change", () => {
  */
 export const importFromDrive = async (ui) => {
   console.debug("[DriveUI] importFromDrive called", { time: new Date().toISOString(), stack: (new Error().stack) });
-  if (!isSignedIn()) {
-    ui.updateStatus("To import files, BookForge needs permission to read your Google Drive. No files will be modified.", "info");
-    await new Promise((r) => setTimeout(r, 1800));
-  }
-  ui.updateStatus("Connecting to Google Drive...");
+  ui.updateStatus(
+    isSignedIn()
+      ? "Connecting to Google Drive..."
+      : "Connecting to Google Drive\u2014sign in to grant read access when prompted."
+  );
   try {
     console.debug("[DriveUI] Calling ensureAuth", { time: new Date().toISOString() });
     await ensureDriveAuth("https://www.googleapis.com/auth/drive.readonly");

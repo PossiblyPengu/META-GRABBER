@@ -97,6 +97,12 @@ const cacheToken = (token, expiresInSec) => {
 // Try to restore on module load
 restoreCachedToken();
 
+// Pre-load GIS in the background so it is ready before the user clicks.
+// This prevents the script-load network I/O from sitting between the user
+// gesture and requestAccessToken() — iOS Safari drops popup permission after
+// any macrotask (network/setTimeout) following the gesture.
+ensureGIS().catch(() => {});
+
 const DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
