@@ -238,7 +238,11 @@ export const listFolder = async (folderId = "root") => {
     throw new Error(`Invalid folderId: ${folderId}`);
   }
   const token = await ensureAuth(DRIVE_READONLY_SCOPE);
-  const q = `'${folderId}' in parents and trashed = false and (mimeType = 'application/vnd.google-apps.folder' or mimeType contains 'audio/')`;
+  // Also include video/mp4 because Google Drive (especially its iOS app) often
+  // stores M4B / M4A files with mimeType='video/mp4' rather than an audio type.
+  // The picker in drive-ui.js filters these to known audio extensions so plain
+  // MP4 video files are not shown to the user.
+  const q = `'${folderId}' in parents and trashed = false and (mimeType = 'application/vnd.google-apps.folder' or mimeType contains 'audio/' or mimeType = 'video/mp4')`;
   const fields = "files(id,name,mimeType,size)";
   const orderBy = "folder,name";
   const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=${encodeURIComponent(orderBy)}&pageSize=200`;
@@ -266,6 +270,12 @@ export const listFolder = async (folderId = "root") => {
  * @param {(index: number, name: string, loaded: number, total: number, done: boolean) => void} [onProgress]
  * @returns {Promise<File[]>}
  */
+// iOS Safari has unreliable ReadableStream support for cross-origin fetches
+// (broken on iOS < 14.5; partially broken on 14.5–15).  Always use the
+// simpler resp.blob() path there to avoid silent download failures.
+const isIOS = typeof navigator !== "undefined" &&
+  /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window);
+
 export const downloadFiles = async (items, onProgress) => {
   const token = await ensureAuth(DRIVE_READONLY_SCOPE);
   const files = [];
@@ -282,50 +292,69 @@ export const downloadFiles = async (items, onProgress) => {
     return map[ext] || fallbackMime || "audio/mpeg";
   };
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const mimeType = mimeFromName(item.name, item.mimeType);
-    const resp = await fetch(
-      `${DRIVE_FILES_URL}/${item.id}?alt=media`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+  // Download one item, returning a File or null on failure.
+  // Tries streaming (for progress) first; falls back to a fresh blob() fetch.
+  const fetchItem = async (item, mimeType, idx) => {
+    const fetchOpts = { headers: { Authorization: `Bearer ${token}` } };
+    const url = `${DRIVE_FILES_URL}/${item.id}?alt=media`;
+
+    const resp = await fetch(url, fetchOpts);
     if (!resp.ok) {
       console.warn(`Failed to download ${item.name}: ${resp.status}`);
-      onProgress?.(i, item.name, 0, 0, true);
-      continue;
+      onProgress?.(idx, item.name, 0, 0, true);
+      return null;
     }
+
     const total = parseInt(resp.headers.get("Content-Length") || "0", 10);
-    if (onProgress && resp.body && total > 0) {
+    const canStream = !isIOS && onProgress && resp.body && total > 0;
+
+    if (canStream) {
       const reader = resp.body.getReader();
       try {
         const chunks = [];
         let loaded = 0;
-        onProgress(i, item.name, 0, total, false);
+        onProgress(idx, item.name, 0, total, false);
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           chunks.push(value);
           loaded += value.length;
-          onProgress(i, item.name, loaded, total, false);
+          onProgress(idx, item.name, loaded, total, false);
         }
         const blob = new Blob(chunks, { type: mimeType });
-        files.push(new File([blob], item.name, { type: mimeType }));
-        onProgress(i, item.name, total, total, true);
-      } catch (err) {
-        console.warn(`Stream read failed for ${item.name}:`, err);
-        onProgress(i, item.name, 0, 0, true);
-      } finally {
+        onProgress(idx, item.name, total, total, true);
+        return new File([blob], item.name, { type: mimeType });
+      } catch (streamErr) {
+        console.warn(`Stream read failed for ${item.name}, retrying with blob():`, streamErr);
         reader.releaseLock();
+        // Body partially consumed — issue a fresh request for the blob() fallback.
+        const retry = await fetch(url, fetchOpts).catch(() => null);
+        if (!retry?.ok) {
+          onProgress?.(idx, item.name, 0, 0, true);
+          return null;
+        }
+        const blob = await retry.blob().catch(() => null);
+        if (!blob) { onProgress?.(idx, item.name, 0, 0, true); return null; }
+        const finalType = blob.type && blob.type !== "application/octet-stream" ? blob.type : mimeType;
+        onProgress?.(idx, item.name, blob.size, blob.size, true);
+        return new File([blob], item.name, { type: finalType });
       }
     } else {
-      onProgress?.(i, item.name, 0, 0, false);
+      onProgress?.(idx, item.name, 0, 0, false);
       const blob = await resp.blob();
       // resp.blob() preserves the Content-Type from the response; override only
       // if the server sent a generic type (e.g. application/octet-stream).
       const finalType = blob.type && blob.type !== "application/octet-stream" ? blob.type : mimeType;
-      files.push(new File([blob], item.name, { type: finalType }));
-      onProgress?.(i, item.name, blob.size, blob.size, true);
+      onProgress?.(idx, item.name, blob.size, blob.size, true);
+      return new File([blob], item.name, { type: finalType });
     }
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const mimeType = mimeFromName(item.name, item.mimeType);
+    const file = await fetchItem(item, mimeType, i);
+    if (file) files.push(file);
   }
   return files;
 };

@@ -1,3 +1,17 @@
+// Known audio extensions — must stay in sync with AUDIO_EXTENSIONS in app.js.
+const AUDIO_EXTS = new Set(["mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "flac", "wav"]);
+
+/**
+ * Returns true when a Drive file entry (not a File object) looks like an audio
+ * file.  Used to exclude plain video/mp4 entries that the broader Drive query
+ * returns so they don't appear in the picker.
+ */
+const isPickerAudioFile = (f) => {
+  if ((f.mimeType || "").startsWith("audio/")) return true;
+  const ext = (f.name?.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() ?? "";
+  return AUDIO_EXTS.has(ext);
+};
+
 // Helpers
 const formatBytes = (bytes) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -84,9 +98,16 @@ const navigateToFolder = async (folderId) => {
   renderBreadcrumbs();
 
   try {
-    const files = await listFolder(folderId);
+    const rawFiles = await listFolder(folderId);
     gdriveFileList.textContent = "";
-    pickerCurrentFiles = files.filter((f) => f.mimeType !== "application/vnd.google-apps.folder");
+    // Keep only folders and known audio files; video/mp4 files that aren't
+    // audio (e.g. actual video) are excluded from both display and selection.
+    const files = rawFiles.filter((f) =>
+      f.mimeType === "application/vnd.google-apps.folder" || isPickerAudioFile(f)
+    );
+    pickerCurrentFiles = files.filter((f) =>
+      f.mimeType !== "application/vnd.google-apps.folder"
+    );
 
     if (!files.length) {
       const emptyDiv = document.createElement("div");
