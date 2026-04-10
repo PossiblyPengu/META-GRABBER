@@ -1719,6 +1719,18 @@ textarea {
   color: var(--text-secondary);
 }
 
+.gdrive-dl-item.failed .gdrive-dl-fill {
+  background: #e53e3e;
+}
+
+.gdrive-dl-item.failed .gdrive-dl-name {
+  color: #e53e3e;
+}
+
+.gdrive-dl-item.failed .gdrive-dl-size {
+  color: #e53e3e;
+}
+
 /* ---- Selection ---- */
 ::selection {
   background: var(--accent);

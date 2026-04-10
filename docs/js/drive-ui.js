@@ -323,13 +323,13 @@ export const importFromDrive = async (ui) => {
       ui.updateStatus(err.message || "Google Drive authentication failed", "error");
     }
     setTimeout(ui.setIdle, 4000);
-    return [];
+    return null;
   }
 
   console.debug("[DriveUI] Calling openDrivePicker", { time: new Date().toISOString() });
   const selected = await openDrivePicker();
   console.debug("[DriveUI] openDrivePicker resolved", { selected, time: new Date().toISOString() });
-  if (!selected.length) return [];
+  if (!selected.length) return null;
 
   const progressRows = showDownloadProgress(selected);
 
@@ -347,10 +347,13 @@ export const importFromDrive = async (ui) => {
       pr.fill.style.width = `${pct}%`;
       pr.size.textContent = done ? formatBytes(total) : `${formatBytes(loaded)} / ${formatBytes(total)}`;
     } else if (done) {
-      pr.fill.style.width = "100%";
+      pr.fill.style.width = loaded > 0 ? "100%" : "0%";
       pr.size.textContent = loaded > 0 ? formatBytes(loaded) : "Failed";
     }
-    if (done) pr.row.classList.add("done");
+    if (done) {
+      const succeeded = total > 0 || loaded > 0;
+      pr.row.classList.add(succeeded ? "done" : "failed");
+    }
   });
 
   await new Promise((r) => setTimeout(r, 600));

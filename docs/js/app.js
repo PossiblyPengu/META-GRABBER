@@ -1317,8 +1317,15 @@ form.addEventListener("submit", async (e) => {
 gdriveImportBtn.addEventListener("click", async () => {
   try {
     const files = await importFromDrive(ui);
-    if (files.length) await addFiles(files);
-    else setIdle();
+    if (files === null) {
+      // Auth failed or user cancelled — importFromDrive already managed status
+    } else if (files.length) {
+      await addFiles(files);
+      setIdle();
+    } else {
+      updateStatus("Download failed — check your Drive connection and try again.", "error");
+      setTimeout(setIdle, 4000);
+    }
   } catch (err) {
     console.error("Google Drive import failed:", err);
     updateStatus(err.message || "Google Drive import failed", "error");
@@ -1333,8 +1340,15 @@ if (handleRedirectReturn() && hasPendingRedirect()) {
   (async () => {
     try {
       const files = await importFromDrive(ui);
-      if (files.length) await addFiles(files);
-      else setIdle();
+      if (files === null) {
+        // Auth failed or user cancelled — importFromDrive already managed status
+      } else if (files.length) {
+        await addFiles(files);
+        setIdle();
+      } else {
+        updateStatus("Download failed — check your Drive connection and try again.", "error");
+        setTimeout(setIdle, 4000);
+      }
     } catch (err) {
       console.error("Google Drive import (redirect resume) failed:", err);
       updateStatus(err.message || "Google Drive import failed", "error");
