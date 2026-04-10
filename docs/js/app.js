@@ -414,11 +414,13 @@ const processBookFiles = async (bookFiles, { keepStatus = false } = {}) => {
   uploadStatusText.textContent = `Reading metadata from ${bookFiles.length} book file${bookFiles.length > 1 ? "s" : ""}...`;
   let embeddedChapters = null;
   let embeddedTimings = null;
+  let firstBookMeta = null;
   for (const file of bookFiles) {
     try {
       uploadStatusText.textContent = `Processing ${file.name}...`;
       const meta = await extractMetadataFromBookFile(file);
       applyBookFileMetadata(meta);
+      if (!firstBookMeta) firstBookMeta = meta;
       // Capture the first embedded chapter list found
       if (!embeddedChapters && meta.chapters?.length) {
         embeddedChapters = meta.chapters;
@@ -431,7 +433,9 @@ const processBookFiles = async (bookFiles, { keepStatus = false } = {}) => {
   if (!keepStatus) {
     uploadStatus.hidden = true;
   }
-  return embeddedChapters ? { chapters: embeddedChapters, timings: embeddedTimings } : null;
+  return embeddedChapters
+    ? { chapters: embeddedChapters, timings: embeddedTimings, bookMeta: firstBookMeta }
+    : (firstBookMeta ? { chapters: null, timings: null, bookMeta: firstBookMeta } : null);
 };
 
 // ---------------------------------------------------------------------------
@@ -749,6 +753,9 @@ const addFiles = async (fileList) => {
     : null;
   const embeddedChapters = m4bResult?.chapters ?? null;
   const embeddedTimings = m4bResult?.timings ?? null;
+  // Book-level metadata already parsed by processBookFiles — used below to
+  // populate virtual track meta without re-reading the source file.
+  const m4bBookMeta = m4bResult?.bookMeta ?? null;
 
   // Single M4B with multiple embedded chapters: expand to one virtual track per
   // chapter so the user can view and edit each chapter name individually.
@@ -805,7 +812,26 @@ const addFiles = async (fileList) => {
   const metaFailures = [];
   for (let i = 0; i < newTracks.length; i += META_BATCH) {
     const batch = newTracks.slice(i, i + META_BATCH);
-    const batchResults = await Promise.allSettled(batch.map(async (t) => { t.meta = await extractMetadata(t.file); }));
+    const batchResults = await Promise.allSettled(batch.map(async (t) => {
+      if (t._sourceFile) {
+        // Virtual M4B track — reuse the metadata already parsed from the source
+        // file instead of re-parsing the same large blob N times (iOS crash).
+        t.meta = {
+          title: null,
+          album: m4bBookMeta?.title ?? null,
+          artist: m4bBookMeta?.author ?? null,
+          year: null,
+          track: null,
+          genre: null,
+          description: m4bBookMeta?.description ?? null,
+          picture: null,
+          duration: null,
+          bitrate: null,
+        };
+      } else {
+        t.meta = await extractMetadata(t.file);
+      }
+    }));
     batchResults.forEach((r) => { if (r.status === "rejected") metaFailures.push(r); });
     if (newTracks.length > META_BATCH) {
       uploadStatusText.textContent = `Reading ID3 metadata... (${Math.min(i + META_BATCH, newTracks.length)}/${newTracks.length})`;
