@@ -413,13 +413,17 @@ const processBookFiles = async (bookFiles, { keepStatus = false } = {}) => {
   uploadStatus.hidden = false;
   uploadStatusText.textContent = `Reading metadata from ${bookFiles.length} book file${bookFiles.length > 1 ? "s" : ""}...`;
   let embeddedChapters = null;
+  let embeddedTimings = null;
   for (const file of bookFiles) {
     try {
       uploadStatusText.textContent = `Processing ${file.name}...`;
       const meta = await extractMetadataFromBookFile(file);
       applyBookFileMetadata(meta);
       // Capture the first embedded chapter list found
-      if (!embeddedChapters && meta.chapters?.length) embeddedChapters = meta.chapters;
+      if (!embeddedChapters && meta.chapters?.length) {
+        embeddedChapters = meta.chapters;
+        embeddedTimings = meta.chapterTimings ?? null;
+      }
     } catch (err) {
       console.warn("Book file metadata extraction failed for", file.name, err);
     }
@@ -427,7 +431,7 @@ const processBookFiles = async (bookFiles, { keepStatus = false } = {}) => {
   if (!keepStatus) {
     uploadStatus.hidden = true;
   }
-  return embeddedChapters;
+  return embeddedChapters ? { chapters: embeddedChapters, timings: embeddedTimings } : null;
 };
 
 // ---------------------------------------------------------------------------
@@ -722,7 +726,7 @@ const sortTracks = () => {
 const addFiles = async (fileList) => {
   const files = Array.from(fileList || []);
   console.log(`[addFiles] received ${files.length} file(s):`, files.map((f) => `${f.name} (${f.type}, ${f.size}B)`));
-  const audioFiles = files.filter((file) => isAudioTrackFile(file));
+  let audioFiles = files.filter((file) => isAudioTrackFile(file));
   // EPUB and PDF only — M4B is handled as an audio track below
   const bookFiles = files.filter((file) => !isAudioTrackFile(file) && isSupportedBookFile(file));
   console.log(`[addFiles] ${audioFiles.length} audio file(s), ${bookFiles.length} book file(s)`);
@@ -740,9 +744,30 @@ const addFiles = async (fileList) => {
     const ext = f.name?.toLowerCase().match(/\.([^.]+)$/)?.[1];
     return ext === "m4b" || f.type === "audio/x-m4b";
   });
-  const embeddedChapters = m4bAudioFiles.length
+  const m4bResult = m4bAudioFiles.length
     ? await processBookFiles(m4bAudioFiles, { keepStatus: true })
     : null;
+  const embeddedChapters = m4bResult?.chapters ?? null;
+  const embeddedTimings = m4bResult?.timings ?? null;
+
+  // Single M4B with multiple embedded chapters: expand to one virtual track per
+  // chapter so the user can view and edit each chapter name individually.
+  // Each virtual track wraps the same source file with a unique filename so that
+  // undo/redo (keyed on file.name) and the compiler can distinguish them.
+  let expandedFromSingleM4B = false;
+  let m4bSourceFile = null;
+  if (audioFiles.length === 1 && (embeddedChapters?.length ?? 0) > 1) {
+    const src = audioFiles[0];
+    const ext = src.name?.toLowerCase().match(/\.([^.]+)$/)?.[1];
+    if (ext === "m4b" || src.type === "audio/x-m4b" || src.type === "audio/mp4") {
+      m4bSourceFile = src;
+      const stem = src.name.replace(/\.[^.]+$/, "");
+      audioFiles = embeddedChapters.map((_, i) =>
+        new File([src], `${stem}_ch${String(i + 1).padStart(3, "0")}.m4b`, { type: src.type, lastModified: src.lastModified })
+      );
+      expandedFromSingleM4B = true;
+    }
+  }
 
   if (!audioFiles.length) return;
 
@@ -754,7 +779,16 @@ const addFiles = async (fileList) => {
   uploadStatus.hidden = false;
   uploadStatusText.textContent = `Reading ${audioFiles.length} file${audioFiles.length > 1 ? "s" : ""}...`;
 
-  const newTracks = audioFiles.map((file) => ({ file, meta: null, chapterName: null }));
+  const newTracks = audioFiles.map((file, i) => (expandedFromSingleM4B
+    ? {
+        file,
+        meta: null,
+        chapterName: embeddedChapters[i],
+        chapterStart: embeddedTimings?.[i]?.start ?? null,
+        chapterEnd: embeddedTimings?.[i]?.end ?? null,
+        _sourceFile: m4bSourceFile,
+      }
+    : { file, meta: null, chapterName: null }));
   tracks = [...tracks, ...newTracks];
 
   // Initial sort by filename
@@ -789,14 +823,17 @@ const addFiles = async (fileList) => {
   inferredBook = inferBook(tracks, allMeta);
 
   // Apply chapter names — prefer embedded chapter list from M4B when inferBook
-  // couldn't find real names (all "Chapter N") and the count matches
-  const hasRealInferredNames = inferredBook.chapters?.some((n) => !/^Chapter \d+$/.test(n));
-  const useEmbedded = !hasRealInferredNames && embeddedChapters?.length === tracks.length;
-  const chaptersToApply = useEmbedded ? embeddedChapters : inferredBook.chapters;
-  if (chaptersToApply) {
-    chaptersToApply.forEach((name, i) => {
-      if (i < tracks.length) tracks[i].chapterName = name;
-    });
+  // couldn't find real names (all "Chapter N") and the count matches.
+  // Skip this pass when we already set chapterName via single-M4B expansion.
+  if (!expandedFromSingleM4B) {
+    const hasRealInferredNames = inferredBook.chapters?.some((n) => !/^Chapter \d+$/.test(n));
+    const useEmbedded = !hasRealInferredNames && embeddedChapters?.length === tracks.length;
+    const chaptersToApply = useEmbedded ? embeddedChapters : inferredBook.chapters;
+    if (chaptersToApply) {
+      chaptersToApply.forEach((name, i) => {
+        if (i < tracks.length) tracks[i].chapterName = name;
+      });
+    }
   }
 
   // Detect series from inferred title
@@ -1406,6 +1443,8 @@ const gatherState = () => ({
     fileType: t.file.type,
     fileLastModified: t.file.lastModified,
     chapterName: t.chapterName,
+    chapterStart: t.chapterStart ?? null,
+    chapterEnd: t.chapterEnd ?? null,
     meta: t.meta ? { ...t.meta, picture: null } : null,
   })),
 });
@@ -1427,6 +1466,8 @@ const restoreState = (saved) => {
       file,
       meta: t.meta,
       chapterName: t.chapterName,
+      chapterStart: t.chapterStart ?? null,
+      chapterEnd: t.chapterEnd ?? null,
     };
   });
 

@@ -114,12 +114,34 @@ const readM4BFile = async (file) => {
   const coverBlob = picture ? new Blob([picture.data], { type: picture.format || "image/jpeg" }) : null;
 
   // Extract embedded chapter list if present (music-metadata-browser exposes
-  // chapter markers as common.chapter[] — each entry has a .title property)
+  // chapter markers as common.chapter[] — each entry has a .title property and
+  // optionally a startTime (seconds) or startPosition (ms) timing field).
   let chapters = null;
+  let chapterTimings = null;
   const rawChapters = common.chapter || common.chapters;
   if (Array.isArray(rawChapters) && rawChapters.length > 0) {
-    const titles = rawChapters.map((c) => c.title || c.name || null).filter(Boolean);
-    if (titles.length) chapters = titles;
+    const valid = rawChapters
+      .map((c) => {
+        const title = c.title || c.name || null;
+        // Normalise timing to seconds. startTime is already seconds in most
+        // versions; startPosition may be ms (large values) or seconds (small).
+        const raw = c.startTime ?? c.startPosition ?? c.start ?? null;
+        const start = typeof raw === "number"
+          ? (raw > 10000 ? raw / 1000 : raw)   // >10 000 → assume ms
+          : null;
+        return { title, start };
+      })
+      .filter((c) => c.title !== null);
+
+    if (valid.length > 0) {
+      chapters = valid.map((c) => c.title);
+      if (valid.every((c) => c.start !== null)) {
+        chapterTimings = valid.map((c, i) => ({
+          start: c.start,
+          end: valid[i + 1]?.start ?? null,   // null for the last chapter
+        }));
+      }
+    }
   }
 
   return {
@@ -129,6 +151,7 @@ const readM4BFile = async (file) => {
     narrator: common.performer || null,
     coverBlob,
     chapters,
+    chapterTimings,
   };
 };
 

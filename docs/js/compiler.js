@@ -88,19 +88,11 @@ export const compileM4B = async ({ tracks, coverFile, formValues, bitrate = "96k
   ui.updateStatus("Reading files...");
   ui.showProgress(5);
 
-  const filenames = [];
-  for (let i = 0; i < tracks.length; i++) {
-    // Preserve real extension so FFmpeg picks the correct demuxer
-    const origExt = (tracks[i].file.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "mp3";
-    const fname = `input_${String(i).padStart(3, "0")}.${origExt}`;
-    filenames.push(fname);
-    await ffmpeg.writeFile(fname, await fetchFile(tracks[i].file));
-    if (onChapterProgress) onChapterProgress(i, tracks.length, "reading");
-    ui.showProgress(5 + ((i + 1) / tracks.length) * 10);
-  }
-
-  const listContent = filenames.map((f) => `file '${f}'`).join("\n");
-  await ffmpeg.writeFile("inputs.txt", new TextEncoder().encode(listContent));
+  // Detect single-source M4B re-tag: all tracks are virtual chapters from the
+  // same source file (set by addFiles when a single M4B has embedded chapters).
+  const singleSource = tracks.length > 1
+    && tracks[0]._sourceFile != null
+    && tracks.every((t) => t._sourceFile === tracks[0]._sourceFile);
 
   let hasCover = false;
   if (coverFile) {
@@ -108,57 +100,126 @@ export const compileM4B = async ({ tracks, coverFile, formValues, bitrate = "96k
     hasCover = true;
   }
 
-  // Build FFMETADATA1
-  let meta = ";FFMETADATA1\n";
-  meta += `title=${titleVal}\n`;
-  meta += `artist=${authorVal}\n`;
-  if (yearVal) meta += `date=${yearVal}\n`;
-  if (genreVal) meta += `genre=${genreVal}\n`;
-  if (descVal) meta += `comment=${descVal}\n`;
+  const cleanup = ["chapters.txt", "audiobook.m4b"];
+  if (hasCover) cleanup.push("cover.jpg");
 
-  let cursorMs = 0;
-  for (let i = 0; i < tracks.length; i++) {
-    const track = tracks[i];
-    const dur = track.meta?.duration || 0;
-    const durationMs = Math.round(dur * 1000);
-    if (durationMs > 0) {
-      const chTitle = sanitizeMeta(
-        track.chapterName || track.meta?.title || track.file.name.replace(/\.[^.]+$/, "")
-      );
-      meta += "\n[CHAPTER]\nTIMEBASE=1/1000\n";
-      meta += `START=${cursorMs}\n`;
-      meta += `END=${cursorMs + durationMs}\n`;
-      meta += `title=${chTitle}\n`;
-      cursorMs += durationMs;
+  if (singleSource) {
+    // ── Re-tag mode ──────────────────────────────────────────────────────────
+    // Write source file once and stream-copy the audio — no re-encoding.
+    const srcFile = tracks[0]._sourceFile;
+    const srcExt = (srcFile.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "m4b";
+    const srcName = `source.${srcExt}`;
+    await ffmpeg.writeFile(srcName, await fetchFile(srcFile));
+    cleanup.push(srcName);
+    ui.showProgress(15);
+
+    // Build chapter metadata. Use stored chapterStart/End when available;
+    // fall back to even distribution across the total file duration.
+    const totalSec = tracks[0].meta?.duration || 0;
+    let meta = ";FFMETADATA1\n";
+    meta += `title=${titleVal}\n`;
+    meta += `artist=${authorVal}\n`;
+    if (yearVal) meta += `date=${yearVal}\n`;
+    if (genreVal) meta += `genre=${genreVal}\n`;
+    if (descVal) meta += `comment=${descVal}\n`;
+
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
+      const chTitle = sanitizeMeta(t.chapterName || `Chapter ${i + 1}`);
+      const startMs = t.chapterStart != null
+        ? Math.round(t.chapterStart * 1000)
+        : Math.round((i / tracks.length) * totalSec * 1000);
+      const endMs = t.chapterEnd != null
+        ? Math.round(t.chapterEnd * 1000)
+        : (tracks[i + 1]?.chapterStart != null
+            ? Math.round(tracks[i + 1].chapterStart * 1000)
+            : Math.round(((i + 1) / tracks.length) * totalSec * 1000));
+      if (endMs > startMs) {
+        meta += "\n[CHAPTER]\nTIMEBASE=1/1000\n";
+        meta += `START=${startMs}\nEND=${endMs}\ntitle=${chTitle}\n`;
+      }
     }
+    await ffmpeg.writeFile("chapters.txt", new TextEncoder().encode(meta));
+
+    ui.updateStatus("Re-tagging M4B...");
+    ui.showProgress(50);
+
+    const args = ["-y", "-i", srcName, "-i", "chapters.txt"];
+    if (hasCover) {
+      args.push("-i", "cover.jpg", "-map", "0:a", "-map", "2:v");
+      args.push("-c:v", "mjpeg", "-disposition:v", "attached_pic");
+    } else {
+      args.push("-vn");
+    }
+    args.push("-map_metadata", "1", "-map_chapters", "1", "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", "audiobook.m4b");
+    await ffmpeg.exec(args);
+
+  } else {
+    // ── Normal concat + encode mode ──────────────────────────────────────────
+    const filenames = [];
+    for (let i = 0; i < tracks.length; i++) {
+      const origExt = (tracks[i].file.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "mp3";
+      const fname = `input_${String(i).padStart(3, "0")}.${origExt}`;
+      filenames.push(fname);
+      await ffmpeg.writeFile(fname, await fetchFile(tracks[i].file));
+      if (onChapterProgress) onChapterProgress(i, tracks.length, "reading");
+      ui.showProgress(5 + ((i + 1) / tracks.length) * 10);
+    }
+    cleanup.push(...filenames, "inputs.txt", "combined.m4a");
+
+    const listContent = filenames.map((f) => `file '${f}'`).join("\n");
+    await ffmpeg.writeFile("inputs.txt", new TextEncoder().encode(listContent));
+
+    // Build FFMETADATA1
+    let meta = ";FFMETADATA1\n";
+    meta += `title=${titleVal}\n`;
+    meta += `artist=${authorVal}\n`;
+    if (yearVal) meta += `date=${yearVal}\n`;
+    if (genreVal) meta += `genre=${genreVal}\n`;
+    if (descVal) meta += `comment=${descVal}\n`;
+
+    let cursorMs = 0;
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
+      const dur = track.meta?.duration || 0;
+      const durationMs = Math.round(dur * 1000);
+      if (durationMs > 0) {
+        const chTitle = sanitizeMeta(
+          track.chapterName || track.meta?.title || track.file.name.replace(/\.[^.]+$/, "")
+        );
+        meta += "\n[CHAPTER]\nTIMEBASE=1/1000\n";
+        meta += `START=${cursorMs}\n`;
+        meta += `END=${cursorMs + durationMs}\n`;
+        meta += `title=${chTitle}\n`;
+        cursorMs += durationMs;
+      }
+    }
+    await ffmpeg.writeFile("chapters.txt", new TextEncoder().encode(meta));
+
+    // Stage 1: decode + encode all inputs to AAC — handles MP3, M4A, M4B, AAC, OGG, FLAC, WAV
+    ui.updateStatus("Encoding audio...");
+    ui.showProgress(18);
+    await ffmpeg.exec(["-y", "-f", "concat", "-safe", "0", "-i", "inputs.txt", "-c:a", "aac", "-b:a", bitrate, "combined.m4a"]);
+
+    // Stage 2: mux AAC stream with chapters + optional cover (stream copy, no re-encode)
+    ui.updateStatus("Building M4B...");
+    ui.showProgress(85);
+
+    const args = ["-y", "-i", "combined.m4a", "-i", "chapters.txt"];
+    if (hasCover) {
+      args.push("-i", "cover.jpg", "-map", "0:a", "-map", "2:v");
+      args.push("-c:v", "mjpeg", "-disposition:v", "attached_pic");
+    }
+    args.push("-map_metadata", "1", "-map_chapters", "1", "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", "audiobook.m4b");
+    if (!hasCover) args.splice(args.indexOf("-f"), 0, "-vn");
+    await ffmpeg.exec(args);
   }
-  await ffmpeg.writeFile("chapters.txt", new TextEncoder().encode(meta));
-
-  // Stage 1: decode + encode all inputs to AAC — handles MP3, M4A, M4B, AAC, OGG, FLAC, WAV
-  ui.updateStatus("Encoding audio...");
-  ui.showProgress(18);
-  await ffmpeg.exec(["-y", "-f", "concat", "-safe", "0", "-i", "inputs.txt", "-c:a", "aac", "-b:a", bitrate, "combined.m4a"]);
-
-  // Stage 2: mux AAC stream with chapters + optional cover (stream copy, no re-encode)
-  ui.updateStatus("Building M4B...");
-  ui.showProgress(85);
-
-  const args = ["-y", "-i", "combined.m4a", "-i", "chapters.txt"];
-  if (hasCover) {
-    args.push("-i", "cover.jpg", "-map", "0:a", "-map", "2:v");
-    args.push("-c:v", "mjpeg", "-disposition:v", "attached_pic");
-  }
-  args.push("-map_metadata", "1", "-map_chapters", "1", "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", "audiobook.m4b");
-  if (!hasCover) args.splice(args.indexOf("-f"), 0, "-vn");
-  await ffmpeg.exec(args);
 
   ui.updateStatus("Preparing download...");
   ui.showProgress(95);
   const data = await ffmpeg.readFile("audiobook.m4b");
 
   // Cleanup
-  const cleanup = [...filenames, "inputs.txt", "chapters.txt", "combined.m4a", "audiobook.m4b"];
-  if (hasCover) cleanup.push("cover.jpg");
   for (const f of cleanup) {
     await ffmpeg.deleteFile(f).catch((err) => console.warn(`cleanup: failed to delete ${f}`, err));
   }
