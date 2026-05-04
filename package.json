@@ -27,7 +27,7 @@
   "bugs": {
     "url": "https://github.com/PossiblyPengu/windsurf-project-2/issues"
   },
-  "homepage": "https://github.com/PossiblyPengu/windsurf-project-2#readme",
+  "homepage": "https://possiblypengu.github.io/windsurf-project-2/",
   "dependencies": {
     "@capacitor/android": "^6.0.0",
     "@capacitor/core": "^6.0.0",
