@@ -1,7 +1,7 @@
 {
-  "name": "windsurf-project-2",
+  "name": "bookforge",
   "version": "1.0.0",
-  "description": "",
+  "description": "Convert MP3 chapters into M4B audiobooks",
   "main": "index.js",
   "directories": {
     "doc": "docs"
@@ -10,7 +10,10 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint docs/js/"
+    "lint": "eslint docs/js/",
+    "cap:init": "npx cap add ios",
+    "cap:sync": "npx cap sync ios",
+    "cap:open": "npx cap open ios"
   },
   "repository": {
     "type": "git",
@@ -23,7 +26,12 @@
     "url": "https://github.com/PossiblyPengu/windsurf-project-2/issues"
   },
   "homepage": "https://github.com/PossiblyPengu/windsurf-project-2#readme",
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
+  },
   "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.3",
     "vitest": "^4.1.0"

@@ -1,0 +1,14 @@
+{
+  "appId": "io.github.possiblypengu.bookforge",
+  "appName": "BookForge",
+  "webDir": "docs",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true
+  }
+}

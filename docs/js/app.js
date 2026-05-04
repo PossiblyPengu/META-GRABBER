@@ -7,6 +7,7 @@ import { compileM4B } from "./compiler.js";
 import { pushState, undo, redo, clearHistory } from "./history.js";
 import { importFromDrive, exportToDrive, gdriveDownloading, isPickerHidden, setPickerVisible } from "./drive-ui.js";
 import { handleRedirectReturn, hasPendingRedirect, clearPendingRedirect } from "./gdrive.js";
+import { toastSuccess, toastError, toastInfo, toastWarning } from "./toast.js";
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -62,6 +63,7 @@ const panels = {
   forge: $("panel-forge"),
 };
 const wizardNav = $("wizard-nav");
+const bottomNav = $("bottom-nav");
 const stepOrder = ["upload", "match", "edit", "forge"];
 
 // Form fields
@@ -209,6 +211,16 @@ const refreshUploadSummary = () => {
 // ---------------------------------------------------------------------------
 // Wizard navigation
 // ---------------------------------------------------------------------------
+const syncBottomNav = (step) => {
+  if (!bottomNav) return;
+  const activeIdx = stepOrder.indexOf(step);
+  bottomNav.querySelectorAll(".bottom-nav-item").forEach((btn, i) => {
+    btn.classList.toggle("active", i === activeIdx);
+    btn.classList.toggle("completed", i < activeIdx);
+    btn.disabled = i > activeIdx + 1;
+  });
+};
+
 const goToStep = (step) => {
   const nextIdx = stepOrder.indexOf(step);
   if (nextIdx < 0) return;
@@ -218,7 +230,7 @@ const goToStep = (step) => {
   panels[step]?.classList.add("active");
   currentStep = step;
 
-  // Update nav buttons
+  // Update top wizard nav
   const buttons = wizardNav.querySelectorAll(".wizard-step");
   const connectors = wizardNav.querySelectorAll(".wizard-connector");
   buttons.forEach((btn, i) => {
@@ -235,6 +247,9 @@ const goToStep = (step) => {
     c.classList.toggle("done", i < nextIdx);
   });
 
+  // Sync mobile bottom nav
+  syncBottomNav(step);
+
   // If entering upload step, show file summary if tracks exist
   if (step === "upload") refreshUploadSummary();
 
@@ -245,13 +260,87 @@ const goToStep = (step) => {
   if (onSessionChange) onSessionChange();
 };
 
-// Allow clicking completed/adjacent steps
+// Allow clicking completed/adjacent steps (top nav)
 wizardNav.addEventListener("click", (e) => {
   const btn = e.target.closest(".wizard-step");
   if (!btn || btn.classList.contains("disabled")) return;
   const step = stepOrder[parseInt(btn.dataset.step, 10) - 1];
   if (step) goToStep(step);
 });
+
+// Mobile bottom nav clicks
+bottomNav?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".bottom-nav-item");
+  if (!btn || btn.disabled) return;
+  const step = btn.dataset.step;
+  if (step) goToStep(step);
+});
+
+// ---------------------------------------------------------------------------
+// Edit panel tab switcher (mobile)
+// ---------------------------------------------------------------------------
+const editTabs = $("edit-tabs");
+const editorGrid = $("editor-grid");
+
+editTabs?.addEventListener("click", (e) => {
+  const tab = e.target.closest(".edit-tab");
+  if (!tab) return;
+  const targetTab = tab.dataset.tab;
+  editTabs.querySelectorAll(".edit-tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.tab === targetTab);
+    t.setAttribute("aria-selected", String(t.dataset.tab === targetTab));
+  });
+  editorGrid?.classList.remove("tab-chapters", "tab-details");
+  editorGrid?.classList.add(`tab-${targetTab}`);
+});
+
+// ---------------------------------------------------------------------------
+// Prompt modal (replaces native window.prompt for better mobile UX)
+// ---------------------------------------------------------------------------
+const promptModal = (title, label, { isTextarea = false, defaultValue = "", placeholder = "" } = {}) =>
+  new Promise((resolve) => {
+    const modal = $("prompt-modal");
+    if (!modal) { resolve(window.prompt(label, defaultValue)); return; }
+    $("prompt-modal-title").textContent = title;
+    $("prompt-modal-label").textContent = label;
+    const inputEl = $("prompt-modal-input");
+    const textareaEl = $("prompt-modal-textarea");
+    if (isTextarea) {
+      inputEl.hidden = true;
+      textareaEl.hidden = false;
+      textareaEl.value = "";
+      textareaEl.placeholder = placeholder;
+    } else {
+      inputEl.hidden = false;
+      textareaEl.hidden = true;
+      inputEl.value = defaultValue;
+      inputEl.placeholder = placeholder;
+    }
+    modal.hidden = false;
+    requestAnimationFrame(() => (isTextarea ? textareaEl : inputEl).focus());
+
+    const finish = (value) => {
+      modal.hidden = true;
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      closeBtn.removeEventListener("click", onCancel);
+      modal.removeEventListener("keydown", onKey);
+      resolve(value);
+    };
+    const confirmBtn = $("prompt-modal-confirm");
+    const cancelBtn = $("prompt-modal-cancel");
+    const closeBtn = $("prompt-modal-close");
+    const onConfirm = () => finish(isTextarea ? textareaEl.value : inputEl.value);
+    const onCancel = () => finish(null);
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); finish(null); }
+      if (!isTextarea && e.key === "Enter") { e.preventDefault(); onConfirm(); }
+    };
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    closeBtn.addEventListener("click", onCancel);
+    modal.addEventListener("keydown", onKey);
+  });
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -565,6 +654,12 @@ const buildTrackRow = (track, index) => {
     }
   });
 
+  // Grip handle (drag affordance)
+  const grip = document.createElement("span");
+  grip.className = "track-grip";
+  grip.setAttribute("aria-hidden", "true");
+  grip.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>`;
+
   const num = document.createElement("span");
   num.className = "track-num";
   num.textContent = String(index + 1).padStart(2, "0");
@@ -620,7 +715,7 @@ const buildTrackRow = (track, index) => {
   const removeBtn = mkBtn("\u2715", "danger", () => removeTrack(index));
 
   actions.append(upBtn, downBtn, removeBtn);
-  row.append(num, playBtn, body, actions);
+  row.append(grip, num, playBtn, body, actions);
   return row;
 };
 
@@ -678,7 +773,7 @@ renameBtn.addEventListener("click", (e) => {
 });
 document.addEventListener("click", () => { renameMenu.hidden = true; });
 
-renameMenu.addEventListener("click", (e) => {
+renameMenu.addEventListener("click", async (e) => {
   const opt = e.target.closest(".rename-option");
   if (!opt) return;
   renameMenu.hidden = true;
@@ -692,16 +787,20 @@ renameMenu.addEventListener("click", (e) => {
   } else if (pattern === "filename") {
     tracks.forEach((t) => { t.chapterName = t.file.name.replace(/\.[^.]+$/, ""); });
   } else if (pattern === "custom") {
-    const prefix = prompt("Enter prefix (number will be appended):", "Chapter");
-    if (prefix != null) {
-      tracks.forEach((t, i) => { t.chapterName = `${prefix} ${i + 1}`; });
-    } else return;
+    const prefix = await promptModal("Custom Rename", "Prefix (a number will be added after)", {
+      defaultValue: "Chapter",
+      placeholder: "e.g. Chapter",
+    });
+    if (prefix == null) return;
+    tracks.forEach((t, i) => { t.chapterName = `${prefix} ${i + 1}`; });
   } else if (pattern === "paste") {
-    const list = prompt("Paste chapter names, one per line:");
-    if (list != null) {
-      const names = list.split("\n").map((s) => s.trim()).filter(Boolean);
-      names.forEach((name, i) => { if (i < tracks.length) tracks[i].chapterName = name; });
-    } else return;
+    const list = await promptModal("Paste Chapter Names", "One chapter name per line", {
+      isTextarea: true,
+      placeholder: "Chapter 1\nChapter 2\n…",
+    });
+    if (list == null) return;
+    const names = list.split("\n").map((s) => s.trim()).filter(Boolean);
+    names.forEach((name, i) => { if (i < tracks.length) tracks[i].chapterName = name; });
   }
   refreshTrackList();
   if (onSessionChange) onSessionChange();
@@ -1094,6 +1193,7 @@ const applyMetadata = async (result) => {
   }
 
   setIdle("Metadata loaded");
+  toastSuccess("Metadata applied from search result.");
   if (onSessionChange) onSessionChange();
 };
 
@@ -1179,6 +1279,15 @@ const populateForgeReview = () => {
 const ui = { updateStatus, showProgress, hideProgress, setIdle };
 
 const bitrateSelect = $("bitrate-select");
+const compileBtnIcon = document.querySelector(".compile-btn-icon");
+const compileBtnSpinner = document.querySelector(".compile-btn-spinner");
+const compileBtnLabel = document.querySelector(".compile-btn-label");
+
+const setCompileSpinner = (on) => {
+  if (compileBtnIcon) compileBtnIcon.hidden = on;
+  if (compileBtnSpinner) compileBtnSpinner.hidden = !on;
+  if (compileBtnLabel) compileBtnLabel.textContent = on ? "Forging…" : "Forge M4B";
+};
 
 const doCompile = async () => {
   const { blob, filename } = await compileM4B({
@@ -1195,13 +1304,13 @@ const doCompile = async () => {
     bitrate: bitrateSelect.value,
     onChapterProgress: (index, total, phase) => {
       if (phase === "reading") {
-        updateStatus(`Reading chapter ${index + 1} of ${total}...`);
+        updateStatus(`Reading chapter ${index + 1} of ${total}…`);
       }
     },
     ui,
   });
 
-  // Download
+  // Trigger download
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -1219,6 +1328,7 @@ const doCompile = async () => {
   showProgress(100);
   setIdle("Complete!");
   setTimeout(hideProgress, 1500);
+  toastSuccess(`"${filename}" downloaded successfully!`, 6000);
 };
 
 // ---------------------------------------------------------------------------
@@ -1375,16 +1485,19 @@ $("forge-back-btn").addEventListener("click", () => goToStep("edit"));
 // Compile
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!tracks.length) { updateStatus("Add MP3 files first", "error"); return; }
+  if (!tracks.length) { toastError("Add audio files first."); return; }
   compileButton.disabled = true;
+  setCompileSpinner(true);
   try {
     await doCompile();
   } catch (err) {
     console.error(err);
     updateStatus(err.message || "Conversion failed", "error");
+    toastError(err.message || "Conversion failed — check the console for details.", 8000);
     hideProgress();
   } finally {
     compileButton.disabled = !tracks.length;
+    setCompileSpinner(false);
     setTimeout(() => { if (!tracks.length) setIdle(); }, 4000);
   }
 });
@@ -1549,6 +1662,7 @@ const scheduleSessionSave = () => {
     });
     if (result?.error === "QuotaExceededError") {
       updateStatus("Storage full — session not saved", "error");
+      toastWarning("Storage full — session could not be saved. Free up space to persist your work.");
     }
     if (!result?.error) {
       savedTrackKeys = currentKeys;
