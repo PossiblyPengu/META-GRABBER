@@ -113,8 +113,8 @@
                   <line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
               </div>
-              <p class="drop-heading">Drop audio chapters or M4B/EPUB/PDF</p>
-              <p class="drop-sub">MP3, M4A, M4B, AAC, OGG, FLAC, WAV become chapters; book files auto-fill metadata &amp; cover</p>
+              <p class="drop-heading">Drop your audio chapters here</p>
+              <p class="drop-sub">MP3, M4A, M4B, AAC, OGG, FLAC, WAV &mdash; or drop an M4B, EPUB, or PDF to auto-fill metadata &amp; cover art</p>
             </div>
           </div>
           <div class="upload-alt-actions">
@@ -160,7 +160,7 @@
         <section class="wizard-panel" id="panel-match">
           <div class="match-header">
             <h2>Find your book</h2>
-            <p>Pick metadata and cover art independently — they don't have to come from the same source.</p>
+            <p>Search by title, author, or ISBN &mdash; then pick metadata and cover art independently.</p>
           </div>
           <div class="match-search-bar">
             <div class="lookup-input-wrap">
@@ -466,11 +466,21 @@
         // If any stale workers are found, unregister them and reload so the
         // current page is no longer running under that COOP header.
         navigator.serviceWorker.getRegistrations().then((regs) => {
-          const stale = regs.filter((reg) =>
-            reg.active && reg.active.scriptURL.includes("coi-serviceworker")
-          );
+          const isStale = (reg) =>
+            [reg.active, reg.waiting, reg.installing].some(
+              (w) => w && w.scriptURL.includes("coi-serviceworker")
+            );
+          const stale = regs.filter(isStale);
           if (stale.length > 0) {
             Promise.all(stale.map((reg) => reg.unregister()))
+              .finally(() => window.location.reload());
+            return;
+          }
+          // Belt-and-suspenders: if the page somehow loaded cross-origin-isolated
+          // (COOP: same-origin is in effect), flush all SWs and reload so the
+          // Google OAuth popup can communicate back to this window.
+          if (window.crossOriginIsolated) {
+            Promise.all(regs.map((reg) => reg.unregister()))
               .finally(() => window.location.reload());
             return;
           }
