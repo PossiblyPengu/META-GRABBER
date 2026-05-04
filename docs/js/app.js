@@ -1400,20 +1400,20 @@ fetchChaptersBtn?.addEventListener("click", async () => {
   if (!tracks.length) return;
   const query = [titleInput.value, authorInput.value].filter((v) => v && v !== DEFAULT_TITLE && v !== DEFAULT_AUTHOR).join(" ");
   if (!query.trim()) {
-    updateStatus("Enter a title or author first", "error");
-    setTimeout(setIdle, 3000);
+    toastWarning("Enter a title or author first.");
     return;
   }
   fetchChaptersBtn.disabled = true;
-  updateStatus("Searching for chapter names...");
+  updateStatus("Searching for chapter names…");
   try {
     const results = await searchBooks(query, 3);
     if (!results.length) {
       updateStatus("No matching book found", "error");
+      toastWarning("No matching book found. Try searching in the Match step.");
       setTimeout(setIdle, 3000);
       return;
     }
-    updateStatus("Fetching chapter list...");
+    updateStatus("Fetching chapter list…");
     let chapters = null;
     for (const result of results) {
       const details = await fetchBookDetails(result);
@@ -1424,6 +1424,7 @@ fetchChaptersBtn?.addEventListener("click", async () => {
     }
     if (!chapters?.length) {
       updateStatus("No chapter list found for this book", "error");
+      toastWarning("No chapter list found for this book.");
       setTimeout(setIdle, 3000);
       return;
     }
@@ -1433,9 +1434,11 @@ fetchChaptersBtn?.addEventListener("click", async () => {
     refreshTrackList();
     if (onSessionChange) onSessionChange();
     setIdle(`Applied ${count} chapter name${count !== 1 ? "s" : ""}`);
+    toastSuccess(`Applied ${count} chapter name${count !== 1 ? "s" : ""} from the book database.`);
   } catch (err) {
     console.error("Fetch chapters failed:", err);
     updateStatus(err.message || "Failed to fetch chapters", "error");
+    toastError(err.message || "Failed to fetch chapters.");
     setTimeout(setIdle, 3000);
   } finally {
     fetchChaptersBtn.disabled = false;
@@ -1510,18 +1513,21 @@ gdriveImportBtn.addEventListener("click", async () => {
   try {
     const files = await importFromDrive(ui);
     if (files === null) {
-      // Auth failed or user cancelled — importFromDrive already managed status
+      // Auth failed or cancelled — importFromDrive already managed status
     } else if (files.length) {
       await addFiles(files);
       const n = tracks.length;
-      setIdle(n > 0 ? `${n} file${n !== 1 ? "s" : ""} imported — see Edit tab for track list` : "Ready");
+      setIdle(n > 0 ? `${n} file${n !== 1 ? "s" : ""} imported` : "Ready");
+      if (n > 0) toastSuccess(`${n} file${n !== 1 ? "s" : ""} imported from Google Drive.`);
     } else {
       updateStatus("Download failed — check your Drive connection and try again.", "error");
+      toastError("Download failed — check your Google Drive connection.");
       setTimeout(setIdle, 4000);
     }
   } catch (err) {
     console.error("Google Drive import failed:", err);
     updateStatus(err.message || "Google Drive import failed", "error");
+    toastError(err.message || "Google Drive import failed.");
     setTimeout(setIdle, 3000);
   }
 });
@@ -1558,6 +1564,7 @@ gdriveExportBtn.addEventListener("click", async () => {
   try {
     const result = await exportToDrive(lastCompiledBlob, lastCompiledFilename, ui);
     if (result.webViewLink) {
+      toastSuccess("File saved to Google Drive!", 5000);
       window.open(result.webViewLink, "_blank", "noopener");
     }
     setTimeout(hideProgress, 1500);
@@ -1565,6 +1572,7 @@ gdriveExportBtn.addEventListener("click", async () => {
     console.error("Google Drive export failed:", err);
     hideProgress();
     updateStatus(err.message || "Google Drive upload failed", "error");
+    toastError(err.message || "Google Drive upload failed.");
     setTimeout(setIdle, 3000);
   }
 });

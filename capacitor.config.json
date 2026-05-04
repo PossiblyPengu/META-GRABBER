@@ -4,11 +4,29 @@
   "webDir": "docs",
   "server": {
     "androidScheme": "https",
-    "iosScheme": "capacitor"
+    "iosScheme": "capacitor",
+    "cleartext": false
   },
   "ios": {
     "contentInset": "automatic",
     "allowsLinkPreview": false,
-    "scrollEnabled": true
+    "scrollEnabled": true,
+    "preferredContentMode": "mobile"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "backgroundColor": "#111110",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
   }
 }

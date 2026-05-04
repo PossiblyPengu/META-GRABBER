@@ -11,9 +11,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint docs/js/",
-    "cap:init": "npx cap add ios",
-    "cap:sync": "npx cap sync ios",
-    "cap:open": "npx cap open ios"
+    "cap:add:ios": "npx cap add ios",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android"
   },
   "repository": {
     "type": "git",
@@ -27,6 +29,7 @@
   },
   "homepage": "https://github.com/PossiblyPengu/windsurf-project-2#readme",
   "dependencies": {
+    "@capacitor/android": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/ios": "^6.0.0"
   },
