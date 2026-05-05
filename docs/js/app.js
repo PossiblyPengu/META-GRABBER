@@ -51,6 +51,12 @@ const uploadAddMoreBtn = $("upload-add-more-btn");
 const uploadClearBtn = $("upload-clear-btn");
 const uploadNextBtn = $("upload-next-btn");
 
+// Chapter search
+const chapterSearchBar = $("chapter-search-bar");
+const chapterSearchInput = $("chapter-search");
+const chapterSearchClear = $("chapter-search-clear");
+const chapterSearchCount = $("chapter-search-count");
+
 // Google Drive buttons (picker UI is in drive-ui.js)
 const gdriveImportBtn = $("gdrive-import-btn");
 const gdriveExportBtn = $("gdrive-export-btn");
@@ -83,6 +89,8 @@ const forgePills = $("forge-meta-pills");
 const forgeDesc = $("forge-description");
 const forgeStats = $("forge-stats");
 const forgeCover = $("forge-cover");
+const downloadAgainBtn = $("download-again-btn");
+const matchNextBtn = $("match-next-btn");
 
 // ---------------------------------------------------------------------------
 // Theme toggle
@@ -155,6 +163,7 @@ let rowRenderHandle = null;
 let undoScheduleHandle = null;
 let sessionSaveHandle = null;
 let savedTrackKeys = new Set();
+let chapterFilter = "";
 
 const scheduleAutoLookup = (query) => {
   cancelScheduled(autoLookupHandle);
@@ -724,6 +733,7 @@ const refreshTrackList = () => {
   trackList.textContent = "";
 
   if (!tracks.length) {
+    if (chapterSearchBar) chapterSearchBar.hidden = true;
     const empty = document.createElement("div");
     empty.className = "track-list-empty";
     empty.textContent = "No chapters added yet.";
@@ -738,20 +748,43 @@ const refreshTrackList = () => {
   // Show Fetch Chapters button once we have tracks
   if (fetchChaptersBtn) fetchChaptersBtn.hidden = false;
 
+  // Show chapter search bar for 5+ tracks
+  if (chapterSearchBar) chapterSearchBar.hidden = tracks.length < 5;
+
+  // Build filtered pairs (real index preserved so mutations work correctly)
+  const filterText = chapterFilter.toLowerCase().trim();
+  const pairs = tracks.map((t, i) => ({ track: t, i })).filter(({ track, i }) => {
+    if (!filterText) return true;
+    const name = (track.chapterName || `Chapter ${i + 1}`).toLowerCase();
+    return name.includes(filterText);
+  });
+
   const totalDuration = tracks.reduce((s, t) => s + (t.meta?.duration || 0), 0);
   const totalSize = tracks.reduce((s, t) => s + t.file.size, 0);
   chapterCount.textContent = `${tracks.length} chapters \u00b7 ${formatDuration(totalDuration)} \u00b7 ${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
+  if (chapterSearchCount) {
+    chapterSearchCount.textContent = filterText ? `${pairs.length} of ${tracks.length}` : "";
+  }
+
+  if (!pairs.length) {
+    const empty = document.createElement("div");
+    empty.className = "track-list-empty";
+    empty.textContent = "No chapters match your filter.";
+    trackList.appendChild(empty);
+    return;
+  }
 
   const renderState = { index: 0 };
   const renderBatch = () => {
     const fragment = document.createDocumentFragment();
-    const end = Math.min(tracks.length, renderState.index + TRACK_RENDER_BATCH_SIZE);
-    for (let i = renderState.index; i < end; i += 1) {
-      fragment.appendChild(buildTrackRow(tracks[i], i));
+    const end = Math.min(pairs.length, renderState.index + TRACK_RENDER_BATCH_SIZE);
+    for (let j = renderState.index; j < end; j++) {
+      const { track, i } = pairs[j];
+      fragment.appendChild(buildTrackRow(track, i));
     }
     trackList.appendChild(fragment);
     renderState.index = end;
-    if (renderState.index < tracks.length) {
+    if (renderState.index < pairs.length) {
       rowRenderHandle = scheduleIdle(renderBatch, 32);
     } else {
       rowRenderHandle = null;
@@ -1194,6 +1227,10 @@ const applyMetadata = async (result) => {
 
   setIdle("Metadata loaded");
   toastSuccess("Metadata applied from search result.");
+  matchNextBtn?.classList.remove("match-ready");
+  // Re-trigger the animation by forcing reflow
+  void matchNextBtn?.offsetWidth;
+  matchNextBtn?.classList.add("match-ready");
   if (onSessionChange) onSessionChange();
 };
 
@@ -1324,6 +1361,7 @@ const doCompile = async () => {
   lastCompiledBlob = blob;
   lastCompiledFilename = filename;
   gdriveExportBtn.hidden = false;
+  if (downloadAgainBtn) downloadAgainBtn.hidden = false;
 
   showProgress(100);
   setIdle("Complete!");
@@ -1367,6 +1405,9 @@ lookupQuery.addEventListener("keydown", (e) => {
 // Clear all
 const clearAll = async () => {
   tracks = [];
+  chapterFilter = "";
+  if (chapterSearchInput) chapterSearchInput.value = "";
+  if (chapterSearchClear) chapterSearchClear.hidden = true;
   inferredBook = null;
   removeCover();
   titleInput.value = "Untitled Audiobook";
@@ -1378,6 +1419,10 @@ const clearAll = async () => {
   booknumInput.value = "";
   descriptionInput.value = "";
   lookupQuery.value = "";
+  lastCompiledBlob = null;
+  lastCompiledFilename = null;
+  if (downloadAgainBtn) downloadAgainBtn.hidden = true;
+  matchNextBtn?.classList.remove("match-ready");
   refreshTrackList();
   clearHistory();
   await clearSession();
@@ -1392,6 +1437,20 @@ uploadAddMoreBtn.addEventListener("click", () => fileInput.click());
 uploadClearBtn.addEventListener("click", clearAll);
 uploadNextBtn.addEventListener("click", () => goToStep("match"));
 restartBtn?.addEventListener("click", clearAll);
+
+// Chapter search filter
+chapterSearchInput?.addEventListener("input", () => {
+  chapterFilter = chapterSearchInput.value;
+  if (chapterSearchClear) chapterSearchClear.hidden = !chapterFilter;
+  refreshTrackList();
+});
+chapterSearchClear?.addEventListener("click", () => {
+  chapterFilter = "";
+  if (chapterSearchInput) chapterSearchInput.value = "";
+  if (chapterSearchClear) chapterSearchClear.hidden = true;
+  refreshTrackList();
+  chapterSearchInput?.focus();
+});
 
 // ---------------------------------------------------------------------------
 // Fetch Chapters from Google Books / Open Library
@@ -1460,16 +1519,21 @@ dropZone.addEventListener("drop", (e) => {
 // Allow dropping files anywhere on the page
 document.body.addEventListener("dragover", (e) => {
   e.preventDefault();
-  if (currentStep === "upload") dropZone.classList.add("dragover");
+  if (currentStep === "upload") {
+    if (!dropZone.hidden) dropZone.classList.add("dragover");
+    else uploadFileSummary.classList.add("dragover");
+  }
 });
 document.body.addEventListener("dragleave", (e) => {
   if (!e.relatedTarget || e.relatedTarget === document.documentElement) {
     dropZone.classList.remove("dragover");
+    uploadFileSummary.classList.remove("dragover");
   }
 });
 document.body.addEventListener("drop", (e) => {
   e.preventDefault();
   dropZone.classList.remove("dragover");
+  uploadFileSummary.classList.remove("dragover");
   if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
 });
 
@@ -1575,6 +1639,19 @@ gdriveExportBtn.addEventListener("click", async () => {
     toastError(err.message || "Google Drive upload failed.");
     setTimeout(setIdle, 3000);
   }
+});
+
+downloadAgainBtn?.addEventListener("click", () => {
+  if (!lastCompiledBlob || !lastCompiledFilename) return;
+  const url = URL.createObjectURL(lastCompiledBlob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = lastCompiledFilename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  toastInfo(`Re-downloading \u201c${lastCompiledFilename}\u201d\u2026`);
 });
 // ---------------------------------------------------------------------------
 // Session persistence

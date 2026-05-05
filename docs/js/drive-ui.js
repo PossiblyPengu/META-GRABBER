@@ -325,11 +325,11 @@ gdriveSelectAll.addEventListener("change", () => {
  */
 export const importFromDrive = async (ui) => {
   console.debug("[DriveUI] importFromDrive called", { time: new Date().toISOString(), stack: (new Error().stack) });
-  ui.updateStatus(
-    isSignedIn()
-      ? "Connecting to Google Drive..."
-      : "Connecting to Google Drive\u2014sign in to grant read access when prompted."
-  );
+  // Only show status if the user needs to sign in — avoid a "Connecting…" flash
+  // when the token is already cached and the picker opens instantly.
+  if (!isSignedIn()) {
+    ui.updateStatus("Connecting to Google Drive \u2014 sign in when prompted\u2026");
+  }
   try {
     console.debug("[DriveUI] Calling ensureAuth", { time: new Date().toISOString() });
     await ensureDriveAuth("https://www.googleapis.com/auth/drive.readonly");

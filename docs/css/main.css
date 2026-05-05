@@ -2616,3 +2616,93 @@ textarea {
     display: none !important;
   }
 }
+
+/* ==================================================================
+   CHAPTER SEARCH BAR
+   ================================================================== */
+.chapter-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.chapter-search-bar[hidden] { display: none; }
+
+.chapter-search-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.chapter-search-icon {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.chapter-search-wrap input {
+  width: 100%;
+  padding: 0.28rem 1.8rem 0.28rem 1.9rem;
+  font-size: 0.8rem;
+  height: 30px;
+  box-shadow: none;
+}
+
+.chapter-search-clear {
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition);
+  display: flex;
+  align-items: center;
+}
+
+.chapter-search-clear[hidden] { display: none; }
+.chapter-search-clear:hover { color: var(--text); }
+
+.chapter-search-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ==================================================================
+   UPLOAD FILE SUMMARY — drag-over highlight
+   ================================================================== */
+.upload-file-summary.dragover {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+  background: var(--accent-dim);
+}
+
+/* ==================================================================
+   MATCH STEP — Continue button pulse after metadata applied
+   ================================================================== */
+@keyframes matchReadyPulse {
+  0%   { box-shadow: var(--shadow-glow); }
+  50%  { box-shadow: 0 0 0 5px rgba(240, 160, 64, 0.35), 0 8px 40px rgba(240, 160, 64, 0.45); }
+  100% { box-shadow: var(--shadow-glow); }
+}
+
+.btn-primary.match-ready {
+  animation: matchReadyPulse 1.4s cubic-bezier(0.25, 1, 0.5, 1) 2;
+}
